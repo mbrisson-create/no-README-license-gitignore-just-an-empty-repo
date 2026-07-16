@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stock Check — Inventory Counter</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Stock Check">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
+<style>
+  :root{
+    --surface:#E3E6E0;
+    --surface-2:#CBD0C7;
+    --ink:#1E2B24;
+    --ink-soft:#4A564C;
+    --accent:#F2B705;
+    --stamp:#B5432A;
+    --line:#8B9A8E;
+    --paper:#F6F5EC;
+    --danger:#B5432A;
+    --radius:10px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--surface); color:var(--ink);
+    font-family:'Inter',sans-serif;
+    display:flex; flex-direction:column;
+    min-height:100vh;
+    min-height:100dvh;
+    overflow:hidden;
+  }
+  h1,h2,h3{ font-family:'Bebas Neue', sans-serif; letter-spacing:0.03em; margin:0; }
+  .mono{ font-family:'IBM Plex Mono', monospace; }
+
+  /* ---------- topbar ---------- */
+  .topbar{
+    padding:16px 18px 12px; background:var(--ink); color:var(--paper);
+    display:flex; align-items:baseline; justify-content:space-between;
+    flex-shrink:0;
+  }
+  .topbar h1{ font-size:26px; }
+  .topbar .sub{ font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--surface-2); }
+  .topbar .total{ text-align:right; }
+  .topbar .total .num{ font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:600; color:var(--accent); }
+  .topbar .total .lbl{ font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--surface-2); }
+
+  .banner{
+    background:var(--accent); color:var(--ink); font-size:13px; font-weight:600;
+    padding:8px 16px; display:none; flex-shrink:0;
+  }
+  .banner.show{ display:block; }
+
+  main{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:12px; }
+  .screen{ display:none; padding:18px; }
+  .screen.active{ display:block; }
+
+  /* ---------- buttons / inputs ---------- */
+  button{ font-family:'Inter',sans-serif; cursor:pointer; border:none; }
+  .btn{
+    display:block; width:100%; padding:16px; border-radius:var(--radius);
+    font-size:16px; font-weight:600; text-align:center; background:var(--ink); color:var(--paper);
+  }
+  .btn.primary{ background:var(--accent); color:var(--ink); }
+  .btn.stamp{ background:var(--stamp); color:var(--paper); }
+  .btn.ghost{ background:transparent; color:var(--ink); border:2px solid var(--ink); }
+  .btn.small{ padding:10px; font-size:13px; width:auto; }
+  .btn.danger{ background:transparent; color:var(--danger); border:2px solid var(--danger); }
+  .btn:disabled{ opacity:.4; }
+  .row{ display:flex; gap:10px; }
+  .row > *{ flex:1; }
+
+  input[type=text], input[type=number], select{
+    width:100%; padding:13px 12px; border-radius:8px; border:2px solid var(--surface-2);
+    background:var(--paper); color:var(--ink); font-size:16px; font-family:'Inter',sans-serif;
+  }
+  label{ font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); display:block; margin:14px 0 6px; }
+
+  .card{ background:var(--paper); border-radius:var(--radius); padding:16px; margin-bottom:14px; }
+
+  /* ---------- ticket stub (signature element) ---------- */
+  .ticket{
+    background:var(--paper); border-radius:6px; margin-bottom:14px; position:relative;
+    box-shadow:0 1px 0 rgba(0,0,0,.05);
+  }
+  .ticket::before{
+    content:""; display:block; height:8px;
+    background-image: radial-gradient(circle, var(--surface) 3px, transparent 3.2px);
+    background-size: 16px 16px; background-position: 4px 0;
+  }
+  .ticket-body{ padding:12px 16px 16px; }
+  .ticket-top{ display:flex; justify-content:space-between; align-items:flex-start; }
+  .ticket-name{ font-size:17px; font-weight:700; line-height:1.2; }
+  .ticket-code{ font-size:11px; color:var(--ink-soft); margin-top:2px; }
+  .ticket-x{ background:none; color:var(--ink-soft); font-size:20px; padding:0 4px; line-height:1; }
+  .ticket-mid{ display:flex; align-items:center; gap:14px; margin-top:10px; }
+  .qty-stepper{ display:flex; align-items:center; gap:0; border:2px solid var(--surface-2); border-radius:8px; overflow:hidden; }
+  .qty-stepper button{ background:var(--surface-2); width:38px; height:38px; font-size:18px; font-weight:700; }
+  .qty-stepper input{ width:56px; height:38px; text-align:center; border:none; border-radius:0; font-family:'IBM Plex Mono',monospace; font-weight:600; }
+  .ticket-price{ margin-left:auto; text-align:right; font-family:'IBM Plex Mono',monospace; }
+  .ticket-price .unit{ font-size:11px; color:var(--ink-soft); }
+  .ticket-price .line{ font-size:17px; font-weight:600; }
+  .stamp-mark{
+    position:absolute; top:6px; right:14px; color:var(--stamp); border:3px solid var(--stamp);
+    border-radius:50%; width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+    font-family:'Bebas Neue',sans-serif; font-size:11px; transform:rotate(-14deg);
+    opacity:0; transition: opacity .15s;
+  }
+  .stamp-mark.show{ animation: stampIn .35s ease-out forwards; }
+  @keyframes stampIn{ 0%{opacity:0; transform:rotate(-14deg) scale(1.8);} 60%{opacity:1;} 100%{opacity:1; transform:rotate(-14deg) scale(1);} }
+
+  /* ---------- scan screen ---------- */
+  .scan-hero{ text-align:center; padding:8px 0 18px; }
+  .scan-hero h2{ font-size:34px; }
+  .scan-hero p{ color:var(--ink-soft); font-size:14px; margin-top:4px; }
+  #reader-wrap{ position:relative; border-radius:var(--radius); overflow:hidden; background:#000; display:none; }
+  #reader-wrap.show{ display:block; }
+  #reader{ width:100%; }
+  .reader-frame{
+    position:absolute; pointer-events:none;
+    left:2.5%; right:2.5%; top:39%; bottom:39%;
+    border-top:1px dashed rgba(246,245,236,.5); border-bottom:1px dashed rgba(246,245,236,.5);
+    overflow:hidden;
+  }
+  .scan-line{
+    position:absolute; left:2%; right:2%; height:2px; border-radius:2px;
+    background:var(--accent); box-shadow:0 0 10px 3px rgba(242,183,5,.65);
+    animation: scanSweep 1.8s ease-in-out infinite;
+  }
+  @keyframes scanSweep{
+    0%{ top:8%; }
+    50%{ top:88%; }
+    100%{ top:8%; }
+  }
+  .divider{ display:flex; align-items:center; gap:10px; color:var(--ink-soft); font-size:12px; margin:18px 0; }
+  .divider::before, .divider::after{ content:""; flex:1; border-top:1px dashed var(--line); }
+
+  .result-card{ text-align:center; }
+  .result-card .rname{ font-size:24px; margin:6px 0 2px; }
+  .result-card .rcode{ font-size:12px; color:var(--ink-soft); }
+  .result-card .rprice{ font-family:'IBM Plex Mono',monospace; font-size:15px; margin-top:6px; }
+
+  .unknown-tag{ background:var(--stamp); color:var(--paper); font-size:11px; font-weight:700; padding:3px 8px; border-radius:20px; display:inline-block; margin-bottom:8px; }
+
+  /* ---------- items list ---------- */
+  .item-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--surface-2); }
+  .item-row .info{ flex:1; min-width:0; }
+  .item-row .info .n{ font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .item-row .info .c{ font-size:11px; color:var(--ink-soft); }
+  .item-row .p{ font-family:'IBM Plex Mono',monospace; font-size:13px; width:64px; text-align:right; }
+  .item-row .del{ background:none; color:var(--ink-soft); font-size:18px; padding:0 4px; }
+
+  .empty{ text-align:center; padding:40px 20px; color:var(--ink-soft); }
+  .empty h3{ font-size:22px; color:var(--ink); margin-bottom:6px; }
+
+  .map-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+  .toast{
+    position:fixed; bottom:78px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:var(--paper); padding:10px 18px; border-radius:30px; font-size:13px;
+    opacity:0; transition:.25s; pointer-events:none; z-index:50; white-space:nowrap;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ---------- tabbar ---------- */
+  .tabbar{ display:flex; background:var(--ink); flex-shrink:0; padding-bottom:env(safe-area-inset-bottom); }
+  .tabbar button{
+    flex:1; background:none; color:var(--surface-2); padding:12px 4px 10px; font-size:11px;
+    font-weight:600; letter-spacing:.04em; text-transform:uppercase; display:flex; flex-direction:column; align-items:center; gap:4px;
+  }
+  .tabbar button .ic{ font-size:18px; }
+  .tabbar button.active{ color:var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>STOCK CHECK</h1>
+    <div class="sub" id="topbar-sub">0 items on file</div>
+  </div>
+  <div class="total">
+    <div class="num" id="topbar-total">$0.00</div>
+    <div class="lbl">Counted value</div>
+  </div>
+</div>
+
+<div class="banner" id="https-banner">⚠ Camera scanning needs HTTPS hosting. Manual barcode entry still works everywhere.</div>
+
+<main>
+
+  <!-- SCAN SCREEN -->
+  <section class="screen active" id="screen-scan">
+    <div class="scan-hero">
+      <h2>Scan an item</h2>
+      <p>Point the camera at a barcode, or type it in below.</p>
+    </div>
+
+    <div id="reader-wrap">
+      <video id="native-video" playsinline autoplay muted style="width:100%; display:none;"></video>
+      <div id="reader"></div>
+      <div class="reader-frame"><div class="scan-line"></div></div>
+    </div>
+    <p id="scan-tip" style="display:none; text-align:center; font-size:12px; color:var(--ink-soft); margin:8px 0 0;">The whole view is being scanned — the line is just a guide. Hold steady and make sure it's well lit.</p>
+    <div id="torch-row" style="display:none; margin-top:8px;">
+      <button class="btn ghost small" id="btn-torch">💡 Flashlight</button>
+    </div>
+
+    <button class="btn primary" id="btn-start-cam">📷 Live Camera Scan</button>
+    <button class="btn ghost" id="btn-stop-cam" style="display:none; margin-top:10px;">Stop Camera</button>
+
+    <div class="divider">or</div>
+    <button class="btn stamp" id="btn-take-photo">📸 Take a Photo to Scan</button>
+    <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none;">
+
+    <div class="divider">or enter manually</div>
+    <div class="row">
+      <input type="text" id="manual-barcode" placeholder="Type or paste barcode" inputmode="numeric">
+      <button class="btn small" id="btn-manual-lookup" style="flex:0 0 90px;">Find</button>
+    </div>
+
+    <div id="result-area" style="margin-top:18px;"></div>
+  </section>
+
+  <!-- COUNT SHEET SCREEN -->
+  <section class="screen" id="screen-sheet">
+    <h2 style="font-size:28px; margin-bottom:14px;">Count Sheet</h2>
+    <div id="sheet-list"></div>
+    <div id="sheet-empty" class="empty" style="display:none;">
+      <h3>Nothing counted yet</h3>
+      <p>Scan items from the Scan tab and they'll stack up here like tickets on a rail.</p>
+    </div>
+    <div class="row" style="margin-top:16px;">
+      <button class="btn primary" id="btn-export">⬇ Export Count Sheet</button>
+    </div>
+    <button class="btn danger" id="btn-clear-counts" style="margin-top:10px;">Clear All Counts</button>
+  </section>
+
+  <!-- ITEMS SCREEN -->
+  <section class="screen" id="screen-items">
+    <h2 style="font-size:28px; margin-bottom:14px;">Item List</h2>
+
+    <div id="import-zone" class="card">
+      <label style="margin-top:0;">Import from Excel / CSV</label>
+      <div style="font-size:12px; color:var(--ink-soft); margin:-4px 0 8px;">Your list already comes pre-loaded on this device. Use this only if you want to bulk-update prices or add new items later.</div>
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
+      <div id="mapping-area" style="display:none; margin-top:10px;"></div>
+    </div>
+
+    <input type="text" id="item-search" placeholder="Search items by name or barcode" style="margin-bottom:10px;">
+    <datalist id="unit-suggestions">
+      <option value="kg"><option value="g"><option value="L"><option value="ml">
+      <option value="unit"><option value="case"><option value="box"><option value="bag">
+      <option value="lb"><option value="oz">
+    </datalist>
+    <div id="items-list"></div>
+    <div id="items-empty" class="empty" style="display:none;">
+      <h3>No items yet</h3>
+      <p>Import your Excel sheet above to load your item list and prices.</p>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <label style="margin-top:0;">Add item manually</label>
+      <input type="text" id="new-barcode" placeholder="Barcode" style="margin-bottom:8px;">
+      <input type="text" id="new-name" placeholder="Item name" style="margin-bottom:8px;">
+      <input type="number" id="new-price" placeholder="Price per unit" step="0.01" style="margin-bottom:8px;">
+      <input type="text" id="new-unit" placeholder="Unit (kg, L, unit...)" style="margin-bottom:10px;">
+      <button class="btn ghost" id="btn-add-item">Add Item</button>
+    </div>
+  </section>
+
+</main>
+
+<div class="tabbar">
+  <button data-tab="scan" class="active"><span class="ic">▣</span>Scan</button>
+  <button data-tab="sheet"><span class="ic">≡</span>Count Sheet</button>
+  <button data-tab="items"><span class="ic">☰</span>Items</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- state ----------
+  var SEED_ITEMS = [{"barcode":"1232853","name":"Tomate","price":4.3034,"unit":"kg"},{"barcode":"noupc-carotte","name":"Carotte","price":2.0242,"unit":"kg"},{"barcode":"2098188","name":"Estragon","price":1.4883,"unit":"unit"},{"barcode":"noupc-lime","name":"Lime","price":6.0307,"unit":"kg"},{"barcode":"noupc-tomate-cerises","name":"Tomate Cerises","price":8.4945,"unit":"kg"},{"barcode":"1443985","name":"Ail pelé frais","price":4.0882,"unit":"kg"},{"barcode":"noupc-citron","name":"Citron","price":3.4119,"unit":"kg"},{"barcode":"2340040","name":"Betterave","price":1.3855,"unit":"kg"},{"barcode":"2038188","name":"Aneth","price":45.92,"unit":"kg"},{"barcode":"1203878","name":"Persil","price":2.36,"unit":"unit"},{"barcode":"noupc-oignons-rouge","name":"Oignons rouge","price":1.4109,"unit":"kg"},{"barcode":"981110","name":"Oignons espagnol","price":0.9273,"unit":"kg"},{"barcode":"noupc-jalapeno-vert","name":"Jalapeno vert","price":11.1111,"unit":"kg"},{"barcode":"3738796","name":"Framboises","price":21.5741,"unit":"kg"},{"barcode":"noupc-concombre","name":"Concombre","price":2.3889,"unit":"kg"},{"barcode":"4410028","name":"Patate Russet","price":1.2112,"unit":"kg"},{"barcode":"1203508","name":"Chou savoie","price":11.28,"unit":"kg"},{"barcode":"1243216","name":"Kale couleurs","price":17.0333,"unit":"kg"},{"barcode":"7264712","name":"Kale vert","price":16.6,"unit":"kg"},{"barcode":"1339897","name":"Chou Vert","price":0.6834,"unit":"kg"},{"barcode":"noupc-oignon-vert","name":"Oignon vert","price":0.8854,"unit":"unit"},{"barcode":"noupc-laitue-romaine","name":"Laitue romaine","price":7.2,"unit":"kg"},{"barcode":"noupc-celeris","name":"Celeris","price":2.5281,"unit":"kg"},{"barcode":"2058188","name":"Thym","price":1.44,"unit":"unit"},{"barcode":"noupc-echalotte-francaise","name":"Echalotte française","price":3.9735,"unit":"kg"},{"barcode":"2005320","name":"Origan","price":48.4,"unit":"kg"},{"barcode":"2108188","name":"Sauge","price":34.28,"unit":"kg"},{"barcode":"2071013","name":"Radis","price":6.3459,"unit":"kg"},{"barcode":"2028188","name":"Ciboulette","price":40.32,"unit":"kg"},{"barcode":"noupc-zuccini","name":"Zuccini","price":2.4256,"unit":"kg"},{"barcode":"noupc-epis-de-mais","name":"Épis de maïs","price":1.5,"unit":"unité"},{"barcode":"1539258","name":"Fromage à la crème","price":16.2167,"unit":"kg"},{"barcode":"9875405","name":"Oeufs","price":0.3204,"unit":"unit"},{"barcode":"1464617","name":"Mascarpone","price":20.1667,"unit":"kg"},{"barcode":"8786246","name":"Crème Sure 14%","price":6.71,"unit":"kg"},{"barcode":"9554405","name":"Beurre salé","price":15.9945,"unit":"kg"},{"barcode":"1228490","name":"Beurre non salé","price":15.6608,"unit":"kg"},{"barcode":"7319028","name":"Burratini","price":35.46,"unit":"kg"},{"barcode":"1201571","name":"Fromage rapé ched/moz","price":16.116,"unit":"kg"},{"barcode":"1107248","name":"Yogourt nature","price":7.5733,"unit":"kg"},{"barcode":"noupc-babeure","name":"Babeure","price":3.0,"unit":"kg"},{"barcode":"1108544","name":"Fromage Brie","price":4.5783,"unit":"unit"},{"barcode":"1434087","name":"Fromage en grain st-Gui","price":16.1533,"unit":"kg"},{"barcode":"9640210","name":"Fromage en grain Kingsey","price":17.707,"unit":"kg"},{"barcode":"noupc-creme-35","name":"Crème 35%","price":8.0,"unit":"L"},{"barcode":"1445202","name":"Fromage cheddar tranche","price":0.4338,"unit":"unit"},{"barcode":"noupc-la-galette","name":"La Galette","price":38.49,"unit":"kg"},{"barcode":"noupc-fou-du-roy","name":"Fou du Roy","price":37.58,"unit":"kg"},{"barcode":"noupc-rassembleu","name":"Rassembleu","price":38.8,"unit":"kg"},{"barcode":"noupc-sabot-de-blanchette","name":"Sabot de Blanchette","price":49.0,"unit":"kg"},{"barcode":"noupc-petit-poitou","name":"Petit Poitou","price":38.2,"unit":"kg"},{"barcode":"noupc-la-capra","name":"La Capra","price":41.9,"unit":"kg"},{"barcode":"noupc-le-pont-mousseau","name":"Le Pont Mousseau","price":28.0,"unit":"kg"},{"barcode":"noupc-lait-condense","name":"Lait condensé","price":0.0147,"unit":"ml"},{"barcode":"noupc-vanille","name":"Vanille","price":424.0,"unit":"kg"},{"barcode":"1272430","name":"Agar","price":157.44,"unit":"kg"},{"barcode":"405340","name":"Sucre","price":2.0035,"unit":"kg"},{"barcode":"1368463","name":"Sirop d'érable","price":0.0098,"unit":"ml"},{"barcode":"1107528","name":"Cassonnade","price":5.075,"unit":"kg"},{"barcode":"8739805","name":"cannelle moulu","price":49.5091,"unit":"kg"},{"barcode":"7302466","name":"Huile d'Olive","price":0.0146,"unit":"ml"},{"barcode":"7212740","name":"Graines de citrouille","price":15.7567,"unit":"kg"},{"barcode":"noupc-noix-de-grenoble","name":"Noix de grenoble","price":21.0,"unit":"kg"},{"barcode":"5430958","name":"Soya","price":0.0038,"unit":"ml"},{"barcode":"1451391","name":"Miel","price":13.2,"unit":"kg"},{"barcode":"1495623","name":"Miel épicée","price":15.8067,"unit":"kg"},{"barcode":"1260219","name":"Olives tranchées","price":6.8738,"unit":"kg"},{"barcode":"4547438","name":"Champignon seché","price":43.1278,"unit":"kg"},{"barcode":"1427027","name":"Farine","price":1.074,"unit":"kg"},{"barcode":"1127370","name":"Fécule de maïs","price":5.638,"unit":"kg"},{"barcode":"1270961","name":"Paprika fumé","price":48.48,"unit":"kg"},{"barcode":"1179807","name":"Vinaige cidre de pomme","price":0.002,"unit":"ml"},{"barcode":"1273289","name":"Câpres","price":0.0079,"unit":"ml"},{"barcode":"8890816","name":"Pickles","price":3.5983,"unit":"kg"},{"barcode":"5708169","name":"Poudre d'oignon","price":22.4583,"unit":"kg"},{"barcode":"9366402","name":"Poudre d'ail","price":22.0,"unit":"kg"},{"barcode":"1327760","name":"Moutarde dijon","price":5.626,"unit":"kg"},{"barcode":"noupc-ketchup","name":"Ketchup","price":3.5659,"unit":"kg"},{"barcode":"noupc-poudre-sauce-demi-glace","name":"Poudre sauce Demi-glace","price":12.8,"unit":"kg"},{"barcode":"1372670","name":"Croustille nachos rond","price":9.6728,"unit":"kg"},{"barcode":"7346179","name":"Cashew non salées","price":30.7567,"unit":"kg"},{"barcode":"noupc-salsa","name":"Salsa","price":6.3973,"unit":"L"},{"barcode":"noupc-ecorce-de-citron","name":"Écorce de Citron","price":35.0,"unit":"kg"},{"barcode":"1270961-2","name":"Paprika","price":48.48,"unit":"kg"},{"barcode":"1832708","name":"Bavette de boeuf AAA","price":55.0,"unit":"kg"},{"barcode":"noupc-bacon-fume","name":"Bacon fumé","price":22.99,"unit":"kg"},{"barcode":"1263374","name":"Boeuf haché CAB","price":16.19,"unit":"kg"},{"barcode":"5396241","name":"Boeuf haché","price":15.6938,"unit":"kg"},{"barcode":"noupc-buf-hache-75","name":"Bœuf haché 75%","price":20.0,"unit":"kg"},{"barcode":"1240249","name":"Ailes de poulets","price":17.19,"unit":"kg"},{"barcode":"noupc-porc-effiloche","name":"Porc Effiloché","price":20.0,"unit":"kg"},{"barcode":"noupc-chorizo","name":"chorizo","price":26.94,"unit":"kg"},{"barcode":"noupc-buf-effiloche","name":"Bœuf effiloché","price":28.0783,"unit":"kg"},{"barcode":"1430504","name":"Cube tartare bœuf","price":3.328,"unit":"un"},{"barcode":"noupc-cube-tartare-buf-vv","name":"Cube tartare bœuf vv","price":50.0,"unit":"kg"},{"barcode":"1255158","name":"filet de poulet cru","price":12.344,"unit":"kg"},{"barcode":"noupc-fraises","name":"Fraises","price":4.0,"unit":"kg"},{"barcode":"noupc-crevettes","name":"Crevettes","price":22.574,"unit":"kg"},{"barcode":"1366410","name":"Saumon","price":24.659,"unit":"kg"},{"barcode":"noupc-bleuets","name":"Bleuets","price":10.8,"unit":"kg"},{"barcode":"1354915","name":"Poireau","price":3.797,"unit":"kg"},{"barcode":"1269425","name":"Frites","price":2.6708,"unit":"kg"},{"barcode":"5417155","name":"Haddok","price":24.7599,"unit":"kg"},{"barcode":"2881605","name":"Batonnet de fromage","price":18.5198,"unit":"kg"},{"barcode":"1205020","name":"Crème glacée vanille","price":5.865,"unit":"kg"},{"barcode":"noupc-foccacia","name":"Foccacia","price":6.5,"unit":"kg"},{"barcode":"1509585","name":"Pain hamburger patate EPI","price":0.657,"unit":"un"},{"barcode":"5355338","name":"Pain hamburger patate Martins","price":0.6472,"unit":"un"},{"barcode":"noupc-pain-sous-marin","name":"Pain Sous-marin","price":0.7657,"unit":""},{"barcode":"5753157","name":"Napkins","price":0.0221,"unit":"un"},{"barcode":"2912832","name":"Pailles 8po bio","price":0.0244,"unit":"un"},{"barcode":"2912853","name":"Pailles 6po bio","price":0.0243,"unit":"un"},{"barcode":"5538240","name":"Contenant rond brun 32oz","price":0.2065,"unit":"un"},{"barcode":"5538253","name":"Couvercle rond 24-32","price":0.1882,"unit":"un"},{"barcode":"1347228","name":"Contenant rond brun 8oz","price":0.1136,"unit":"un"},{"barcode":"1327745","name":"Couvercle rond 8","price":0.0694,"unit":"un"},{"barcode":"1947850","name":"Rouleau Thermique 2.25 x 60'","price":0.497,"unit":"un"},{"barcode":"1290586","name":"Rouleau Thermique 3.125 x 225'","price":1.8706,"unit":"un"},{"barcode":"8874005","name":"Doublure panier vert","price":0.0455,"unit":"un"},{"barcode":"9644005","name":"Vinaigre blanc","price":0.9715,"unit":"L"},{"barcode":"1441106","name":"Poivre","price":48.2048,"unit":"kg"},{"barcode":"1453469","name":"Feuille laurier","price":159.8,"unit":"kg"},{"barcode":"1488324","name":"Tomate Séché","price":10.2008,"unit":"L"},{"barcode":"1240562","name":"Capre","price":8.8087,"unit":"L"},{"barcode":"1201671","name":"Parmesan","price":30.0463,"unit":"kg"},{"barcode":"1457119","name":"Moutarde à la bière","price":9.0222,"unit":"kg"},{"barcode":"2346405","name":"Sel","price":0.723,"unit":"kg"},{"barcode":"1132555","name":"huile de canola","price":3.6358,"unit":"L"},{"barcode":"1151638","name":"Sauce Worcestershire","price":3.0541,"unit":"L"},{"barcode":"2768605","name":"Tabasco","price":48.1103,"unit":"L"},{"barcode":"5119605","name":"soupe à l'oignon","price":10.698,"unit":"kg"},{"barcode":"1241031","name":"cornichon","price":3.382,"unit":"L"},{"barcode":"1241031-2","name":"Jus Cornichon","price":3.382,"unit":"L"},{"barcode":"1519275","name":"coriandre","price":1.9433,"unit":"Unit"},{"barcode":"9784405","name":"jus de lime","price":5.3542,"unit":"L"},{"barcode":"1171508","name":"Beef Stock Concentré","price":29.0063,"unit":"L"},{"barcode":"1171510","name":"Chicken Stock","price":25.8853,"unit":"L"},{"barcode":"1464174","name":"Cornstach","price":2.674,"unit":"kg"},{"barcode":"5981205","name":"Pates Chipotlé","price":38.5417,"unit":"kg"},{"barcode":"94.95","name":"sauce habanero","price":23.7375,"unit":"L"},{"barcode":"8797005","name":"Cumin","price":60.5176,"unit":"kg"},{"barcode":"1203856","name":"orange","price":1.0283,"unit":"Unit"},{"barcode":"1236384","name":"Graham","price":10.6623,"unit":"kg"},{"barcode":"1215258","name":"Jus de citron","price":3.3818,"unit":"L"},{"barcode":"1281708","name":"Graine de coriandre","price":33.0323,"unit":"kg"},{"barcode":"8760405 |","name":"Graine de celleri","price":23.76,"unit":"kg"},{"barcode":"1453521","name":"Graine de fenouille","price":51.6533,"unit":"kg"},{"barcode":"1453551","name":"Anis étoilé","price":153.9,"unit":"kg"},{"barcode":"1318671","name":"Cerise de Terre","price":24.5833,"unit":"kg"},{"barcode":"2038188-2","name":"aneth","price":1.9133,"unit":"Unit"},{"barcode":"9039418","name":"chocolat semi-sucré","price":18.338,"unit":"kg"},{"barcode":"1107492","name":"sucre en poudre","price":6.24,"unit":"kg"},{"barcode":"1210488","name":"tahini","price":13.5778,"unit":"kg"},{"barcode":"1453595","name":"gingembre en poudre","price":66.1,"unit":"kg"},{"barcode":"1366352","name":"Fruit de la passion","price":12.7975,"unit":"kg"},{"barcode":"1445198","name":"fromage suisse","price":0.4985,"unit":"un"},{"barcode":"9752309","name":"Pomme Mcintosh","price":2.4653,"unit":"kg"},{"barcode":"1146745","name":"Poivron rouge","price":6.582,"unit":"kg"},{"barcode":"1380456","name":"cantaloup","price":8.98,"unit":"kg"},{"barcode":"1470028","name":"olive tavolini","price":16.1917,"unit":"kg"},{"barcode":"2252205","name":"pate de tomate","price":6.1264,"unit":"L"},{"barcode":"2078188","name":"basilic","price":1.5233,"unit":"un"},{"barcode":"noupc-vodka-ward","name":"vodka ward","price":0.0332,"unit":"ml"},{"barcode":"9643805","name":"vinaigre vin rouge","price":2.341,"unit":"L"},{"barcode":"1123686","name":"patate jaune yukon","price":1.6586,"unit":"kg"},{"barcode":"5873148","name":"longe d'aiglefin 5oz","price":4.1928,"unit":"un"},{"barcode":"1259558","name":"fromage halloumi","price":34.6979,"unit":"kg"},{"barcode":"noupc-pousse-basilic","name":"pousse basilic","price":235.0,"unit":"kg"},{"barcode":"1145318","name":"tomate entière can","price":2.0529,"unit":"L"},{"barcode":"1453510","name":"chili broyé","price":59.475,"unit":"kg"},{"barcode":"2048188","name":"Romarin","price":1.5317,"unit":"Unit"},{"barcode":"noupc-0","name":"0","price":999999.0,"unit":""},{"barcode":"noupc-tchin-tchin","name":"Tchin Tchin","price":0.8827,"unit":"oz"},{"barcode":"noupc-cantina-blanc","name":"Cantina Blanc","price":0.5787,"unit":"oz"},{"barcode":"noupc-bourgogne-aligote","name":"Bourgogne Aligoté","price":26.53,"unit":"un"},{"barcode":"noupc-cantina-chardonnay-reserve","name":"Cantina Chardonnay Reserve","price":24.3,"unit":"un"},{"barcode":"noupc-cantina-riesling","name":"Cantina Riesling","price":19.9,"unit":"un"},{"barcode":"noupc-william-blanc","name":"William Blanc","price":15.22,"unit":"un"},{"barcode":"noupc-canallas-brut","name":"Canallas Brut","price":20.84,"unit":"un"},{"barcode":"noupc-cabernet-franc-rose","name":"Cabernet Franc Rosé","price":0.8858,"unit":"oz"},{"barcode":"noupc-st-emilion-tertre-de-sarpe","name":"St-Émilion Tertre de Sarpe","price":29.98,"unit":"un"},{"barcode":"noupc-chateau-le-monde-medoc","name":"Chateau le Monde, Medoc","price":24.68,"unit":"un"},{"barcode":"noupc-merlot-syrah-deux-freres","name":"Merlot-Syrah Deux Frères","price":0.6732,"unit":"oz"},{"barcode":"noupc-l-eclat-domaines-fabres-margaux","name":"L'éclat Domaines fabres, Margaux","price":47.44,"unit":"un"},{"barcode":"noupc-montepulciano-abruzzo","name":"Montepulciano Abruzzo","price":25.55,"unit":"un"},{"barcode":"noupc-nebibiolo-d-alba-2022","name":"Nebibiolo d'alba 2022","price":28.49,"unit":"un"},{"barcode":"noupc-chianti-nori","name":"Chianti nori","price":0.7929,"unit":"oz"},{"barcode":"noupc-ocre-malbec","name":"Ocre Malbec","price":24.35,"unit":"un"},{"barcode":"noupc-distillerie-marinara-avril","name":"Distillerie Marinara Avril","price":1.3307,"unit":""},{"barcode":"noupc-3-lacs-fruit-de-la-passion","name":"3 Lacs Fruit de la passion","price":1.0508,"unit":""},{"barcode":"noupc-amer-amer","name":"Amer Amer","price":1.0102,"unit":""},{"barcode":"noupc-gin-st-laurent-maritime","name":"Gin St-Laurent maritime","price":1.611,"unit":""},{"barcode":"noupc-gin-st-laurent-citrus","name":"Gin St-Laurent citrus","price":1.611,"unit":""},{"barcode":"noupc-gin-13","name":"Gin #13","price":1.6764,"unit":""},{"barcode":"noupc-ward-vodka","name":"Ward Vodka","price":1.0024,"unit":""},{"barcode":"noupc-kayak-rouge","name":"Kayak Rouge","price":0.7382,"unit":""},{"barcode":"noupc-barista-cafe","name":"Barista café","price":1.2583,"unit":""},{"barcode":"noupc-rhum-exploratum","name":"Rhum exploratum","price":1.2728,"unit":""},{"barcode":"noupc-rhum-bumbu","name":"Rhum Bumbu","price":2.1972,"unit":""},{"barcode":"noupc-whisky-a-la-canelle","name":"Whisky à la Canelle","price":0.9929,"unit":""},{"barcode":"noupc-glenmorangie-16-ans-nectar","name":"Glenmorangie 16 ans Nectar","price":4.9472,"unit":""},{"barcode":"noupc-baril-cache-whisky","name":"Baril caché whisky","price":1.4165,"unit":""},{"barcode":"noupc-aberlour","name":"Aberlour","price":2.9791,"unit":""},{"barcode":"noupc-aberfeldy","name":"Aberfeldy","price":2.5594,"unit":""},{"barcode":"noupc-glenlivet-founder-reserve","name":"Glenlivet founder reserve","price":2.5618,"unit":""},{"barcode":"noupc-laphroaig-10-ans","name":"Laphroaig 10 ans","price":3.0732,"unit":""},{"barcode":"noupc-aberlour-16-ans","name":"Aberlour 16 ans","price":6.122,"unit":""},{"barcode":"noupc-lagavulin-distiller","name":"Lagavulin distiller","price":6.8398,"unit":""},{"barcode":"noupc-ardbeg-uigeadail","name":"Ardbeg Uigeadail","price":6.6831,"unit":""},{"barcode":"noupc-saint-creme","name":"saint-crème","price":1.5748,"unit":""},{"barcode":"noupc-chartreuse","name":"chartreuse","price":2.9835,"unit":""},{"barcode":"noupc-rhum-plantation","name":"Rhum plantation","price":1.2772,"unit":""},{"barcode":"noupc-triple-sec","name":"Triple sec","price":1.2035,"unit":""},{"barcode":"noupc-rhum-coco","name":"rhum coco","price":1.0492,"unit":""},{"barcode":"noupc-marques-de-riscal-rioja","name":"Marqués de riscal rioja","price":1.089,"unit":""},{"barcode":"noupc-limoncello","name":"Limoncello","price":1.2102,"unit":""},{"barcode":"noupc-cherry-river-vanille","name":"Cherry river vanille","price":1.1811,"unit":""},{"barcode":"noupc-coke","name":"Coke","price":0.5833,"unit":"un"},{"barcode":"noupc-clamato","name":"clamato","price":2.6978,"unit":"L"},{"barcode":"noupc-tonic","name":"tonic","price":0.6667,"unit":"un"},{"barcode":"noupc-cafe-nordik","name":"Café Nordik","price":35.4626,"unit":"kg"},{"barcode":"noupc-biere-gingembre","name":"Bière gingembre","price":1.4671,"unit":"un"},{"barcode":"noupc-jus-canneberge-blanc","name":"jus canneberge blanc","price":2.9319,"unit":"L"},{"barcode":"noupc-coke-zero","name":"coke zero","price":0.5833,"unit":"un"},{"barcode":"noupc-sprite","name":"sprite","price":0.5833,"unit":"un"},{"barcode":"noupc-the-glace","name":"thé glacé","price":0.6117,"unit":"un"},{"barcode":"noupc-canada-dry","name":"canada dry","price":0.5833,"unit":"un"},{"barcode":"noupc-club-soda","name":"club soda","price":0.6667,"unit":"un"},{"barcode":"noupc-perrier","name":"perrier","price":1.2517,"unit":"un"},{"barcode":"noupc-eska-citron","name":"eska citron","price":0.7242,"unit":"un"},{"barcode":"noupc-fee-foamer","name":"Fee foamer","price":17.99,"unit":"un"},{"barcode":"noupc-orange-bitter","name":"Orange Bitter","price":28.99,"unit":"un"},{"barcode":"noupc-sober-blonde","name":"Sober blonde","price":2.47,"unit":"un"},{"barcode":"noupc-sober-rousse","name":"Sober rousse","price":2.4075,"unit":"un"},{"barcode":"noupc-sober-blanche","name":"Sober blanche","price":2.4275,"unit":"un"},{"barcode":"noupc-sober-ipa","name":"Sober Ipa","price":2.4067,"unit":"un"},{"barcode":"noupc-redbull","name":"redbull","price":2.2125,"unit":"un"},{"barcode":"noupc-sangria-atypique","name":"Sangria Atypique","price":2.1317,"unit":"un"},{"barcode":"noupc-mojito-atypique","name":"Mojito Atypique","price":2.1317,"unit":"un"},{"barcode":"noupc-amaretto-sour-atypique","name":"Amaretto Sour Atypique","price":2.1317,"unit":"un"},{"barcode":"noupc-jus-d-orange","name":"jus d'orange","price":3.0608,"unit":"L"},{"barcode":"noupc-extreme-bean","name":"extreme bean","price":8.4383,"unit":"un"},{"barcode":"noupc-verre-pinte","name":"Verre pinte","price":3.99,"unit":"un"},{"barcode":"noupc-verre-a-vin","name":"Verre à vin","price":8.0,"unit":"un"},{"barcode":"noupc-verre-fort","name":"Verre fort","price":3.3,"unit":"un"},{"barcode":"noupc-casquette-premium","name":"Casquette premium","price":18.95,"unit":"un"},{"barcode":"noupc-casquette-trucker","name":"Casquette trucker","price":14.95,"unit":"un"},{"barcode":"noupc-t-shirt-gildan","name":"t-shirt gildan","price":10.45,"unit":"un"},{"barcode":"noupc-coton-heroes","name":"coton heroes","price":38.95,"unit":"un"},{"barcode":"noupc-mayonnaise","name":"Mayonnaise","price":3.4729,"unit":"kg"},{"barcode":"noupc-eau-robinet","name":"Eau Robinet","price":0.0,"unit":"L"},{"barcode":"0.25","name":"Bière Nocturne","price":4.64,"unit":"L"},{"barcode":"0.25-2","name":"Bières Sour Base","price":6.28,"unit":"L"},{"barcode":"0.25-3","name":"Bière Ambréeille","price":4.8,"unit":"L"},{"barcode":"0.25-4","name":"Bière Camping-Pong","price":4.56,"unit":"L"},{"barcode":"noupc-veggie-stock","name":"Veggie Stock","price":6.519,"unit":"Litres"},{"barcode":"noupc-pico-de-gallo","name":"Pico de Gallo","price":8.2717,"unit":"kg"},{"barcode":"noupc-huile-epicees","name":"Huile Épicées","price":10.0878,"unit":"kg"},{"barcode":"noupc-burger-patties","name":"Burger Patties","price":1.749,"unit":"unit"},{"barcode":"noupc-sauce-ranch","name":"Sauce Ranch","price":4.3418,"unit":"kg"},{"barcode":"noupc-gravlax-de-saumon","name":"Gravlax de Saumon","price":28.232,"unit":"kg"},{"barcode":"noupc-mi-cuit-au-chocolat","name":"Mi-Cuit au chocolat","price":0.5719,"unit":"unité"},{"barcode":"noupc-poutine-sauce","name":"Poutine Sauce","price":3.6279,"unit":"Litres"},{"barcode":"noupc-dijonnaise-a-l-erable","name":"dijonnaise à l'érable","price":5.1808,"unit":"kg"},{"barcode":"noupc-sauce-big-max","name":"Sauce Big Max","price":3.4909,"unit":"kg"},{"barcode":"noupc-mayonnaise-epicee","name":"Mayonnaise épicée","price":6.5124,"unit":"kg"},{"barcode":"noupc-gateau-fromage-a-la-fraise","name":"Gateau Fromage à la Fraise","price":1.6373,"unit":"unité"},{"barcode":"noupc-vegetable-mix-philly","name":"Vegetable mix philly","price":1.2625,"unit":"kg"},{"barcode":"noupc-viande-mix-philly","name":"Viande mix philly","price":24.9274,"unit":"kg"},{"barcode":"noupc-beurre-gambas","name":"beurre gambas","price":18.9337,"unit":"kg"},{"barcode":"noupc-chutney-cerise-de-terre","name":"Chutney cerise de terre","price":18.9048,"unit":"kg"},{"barcode":"noupc-bbq-sauce","name":"BBQ sauce","price":3.5451,"unit":"kg"},{"barcode":"noupc-tatar-sauce","name":"Tatar Sauce","price":14.132,"unit":"kg"},{"barcode":"noupc-salade-de-choux-kale","name":"Salade de Choux Kale","price":5.1366,"unit":"kg"},{"barcode":"noupc-sauce-espagnol","name":"sauce espagnol","price":5.7261,"unit":"litres"},{"barcode":"noupc-confiture-bleuet-basilic","name":"Confiture Bleuet Basilic","price":7.4516,"unit":"kg"},{"barcode":"noupc-sauce-vodka-yogourt","name":"Sauce Vodka Yogourt","price":19.1582,"unit":"kg"},{"barcode":"noupc-salade-concombre-cantaloup","name":"Salade Concombre Cantaloup","price":5.4496,"unit":"kg"},{"barcode":"noupc-reduction-vin-rouge-miel","name":"Réduction vin rouge miel","price":20.0067,"unit":"kg"},{"barcode":"noupc-fish-batter","name":"Fish Batter","price":3.5874,"unit":"kg"},{"barcode":"noupc-oignons-marines","name":"Oignons marinés","price":2.5568,"unit":"kg"},{"barcode":"noupc-bruschetta-mix","name":"Bruschetta Mix","price":13.3352,"unit":"kg"},{"barcode":"noupc-marinara","name":"marinara","price":2.1954,"unit":"kg"},{"barcode":"noupc-rhum-et-liqueur","name":"rhum et liqueur","price":2.5227,"unit":"unité"},{"barcode":"noupc-bloody-ceasar","name":"bloody ceasar","price":2.7157,"unit":"unité"},{"barcode":"noupc-negroni","name":"Negroni","price":3.4248,"unit":"unité"},{"barcode":"noupc-gin-tonic","name":"gin tonic","price":3.2114,"unit":"unité"},{"barcode":"noupc-hopespresso-martini","name":"Hopespresso Martini","price":2.4129,"unit":"unité"},{"barcode":"noupc-hope-fashionned","name":"Hope Fashionned","price":2.9807,"unit":"unité"},{"barcode":"noupc-whisky-mule","name":"Whisky Mule","price":3.622,"unit":"unité"},{"barcode":"noupc-cosmo-neige","name":"cosmo neige","price":2.1726,"unit":"unité"},{"barcode":"noupc-whisky-sour","name":"Whisky sour","price":3.0763,"unit":"unité"},{"barcode":"noupc-panache","name":"panaché","price":1.7871,"unit":"unité"},{"barcode":"noupc-bumbu-et-liqueur","name":"bumbu et liqueur","price":3.8792,"unit":"unité"},{"barcode":"noupc-hope-et-tonic","name":"hope et tonic","price":3.4964,"unit":"unité"},{"barcode":"noupc-vodka-soda","name":"vodka soda","price":2.1702,"unit":"unité"},{"barcode":"noupc-boulvardier","name":"boulvardier","price":3.4361,"unit":"unité"},{"barcode":"noupc-gin-soda","name":"gin soda","price":3.1812,"unit":"unité"},{"barcode":"noupc-sour-mix","name":"sour mix","price":3.1858,"unit":"L"},{"barcode":"noupc-chimichurri","name":"chimichurri","price":14.3796,"unit":"kg"},{"barcode":"noupc-puree-de-mais","name":"purée de maïs","price":16.2254,"unit":"kg"}];
+
+  var state = loadState();
+  var lastFoundBarcode = null;
+  var scanMode = null; // 'native' | 'quagga'
+  var nativeStream = null;
+  var nativeDetector = null;
+  var nativeLoopId = null;
+  var lastScanCode = null;
+  var lastScanTime = 0;
+
+  function loadState(){
+    try{
+      var s = JSON.parse(localStorage.getItem('stockcheck_state_v1'));
+      if(s && s.items && s.counts) return s;
+    }catch(e){}
+    // First run on this device/site: seed with the built-in item list.
+    return { items: SEED_ITEMS.slice(), counts: {} };
+  }
+  function saveState(){
+    localStorage.setItem('stockcheck_state_v1', JSON.stringify(state));
+    renderTopbar();
+  }
+
+  // ---------- multi-device sync ----------
+  // Netlify Blobs (via netlify/functions/data.mjs) is the shared source of truth.
+  // Each device also keeps localStorage as an offline cache.
+  var API_URL = '/.netlify/functions/data';
+  var lastSyncErrorToast = 0;
+
+  function apiPost(body){
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r){
+      if(!r.ok) throw new Error('sync failed');
+      return r.json();
+    });
+  }
+
+  function syncError(){
+    var now = Date.now();
+    if(now - lastSyncErrorToast > 10000){
+      lastSyncErrorToast = now;
+      toast('Offline — changes saved on this device only');
+    }
+  }
+
+  function syncSetItems(){ apiPost({ action:'setItems', items: state.items }).catch(syncError); }
+  function syncUpsertItem(item, oldBarcode){ apiPost({ action:'upsertItem', item:item, oldBarcode:oldBarcode }).catch(syncError); }
+  function syncDeleteItem(barcode){ apiPost({ action:'deleteItem', barcode:barcode }).catch(syncError); }
+  function syncUpsertCount(barcode, count){ apiPost({ action:'upsertCount', barcode:barcode, count:count }).catch(syncError); }
+  function syncDeleteCount(barcode){ apiPost({ action:'deleteCount', barcode:barcode }).catch(syncError); }
+  function syncClearCounts(){ apiPost({ action:'clearCounts' }).catch(syncError); }
+
+  // Pulls the shared state down and repaints, without stomping on whatever the user is typing.
+  function applyServerState(data){
+    state.items = data.items;
+    state.counts = data.counts || {};
+    localStorage.setItem('stockcheck_state_v1', JSON.stringify(state));
+    renderTopbar();
+    var active = document.activeElement;
+    if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+    if(document.getElementById('screen-sheet').classList.contains('active')) renderSheet();
+    if(document.getElementById('screen-items').classList.contains('active')) renderItems();
+  }
+
+  function syncFromServer(){
+    return fetch(API_URL).then(function(r){ return r.json(); }).then(function(data){
+      if(data && data.items) applyServerState(data);
+      else if(data) syncSetItems(); // this device is the first to talk to the server — seed it
+    });
+  }
+
+  function pollServer(){ syncFromServer().catch(function(){}); }
+
+  function initSync(){
+    syncFromServer().catch(function(){ toast('Offline — using data saved on this device'); });
+    setInterval(pollServer, 4000);
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden) pollServer(); });
+  }
+
+  function money(n){ return '$' + (Math.round(n*100)/100).toFixed(2); }
+
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._to);
+    toast._to = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  // ---------- https banner ----------
+  if(!(location.protocol === 'https:' || location.hostname === 'localhost')){
+    document.getElementById('https-banner').classList.add('show');
+  }
+
+  // ---------- tabs ----------
+  var tabs = document.querySelectorAll('.tabbar button');
+  tabs.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      tabs.forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+      document.getElementById('screen-' + btn.dataset.tab).classList.add('active');
+      if(btn.dataset.tab !== 'scan') stopCamera();
+      if(btn.dataset.tab === 'sheet') renderSheet();
+      if(btn.dataset.tab === 'items') renderItems();
+    });
+  });
+
+  function renderTopbar(){
+    document.getElementById('topbar-sub').textContent = state.items.length + ' items on file';
+    var total = 0;
+    Object.keys(state.counts).forEach(function(k){
+      var c = state.counts[k];
+      total += (c.qty||0) * (c.price||0) * (c.factor||1);
+    });
+    document.getElementById('topbar-total').textContent = money(total);
+  }
+
+  // ================= SCAN =================
+  var btnStart = document.getElementById('btn-start-cam');
+  var btnStop = document.getElementById('btn-stop-cam');
+  var readerWrap = document.getElementById('reader-wrap');
+
+  btnStart.addEventListener('click', startCamera);
+  btnStop.addEventListener('click', stopCamera);
+
+  function startCamera(){
+    readerWrap.classList.add('show');
+    document.getElementById('scan-tip').style.display = 'block';
+    btnStart.style.display = 'none';
+    btnStop.style.display = 'block';
+
+    if('BarcodeDetector' in window){
+      startNativeScanner();
+    } else if(typeof Quagga !== 'undefined'){
+      startQuaggaScanner();
+    } else {
+      toast('Camera scanning failed to load — check your connection and reload.');
+      stopCamera();
+    }
+  }
+
+  function startNativeScanner(){
+    scanMode = 'native';
+    var video = document.getElementById('native-video');
+    document.getElementById('reader').style.display = 'none';
+    video.style.display = 'block';
+
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    }).then(function(stream){
+      nativeStream = stream;
+      video.srcObject = stream;
+      return video.play();
+    }).then(function(){
+      BarcodeDetector.getSupportedFormats ? BarcodeDetector.getSupportedFormats().then(setupNativeDetector) : setupNativeDetector();
+      setupTorch(nativeStream.getVideoTracks()[0]);
+    }).catch(function(err){
+      toast('Camera unavailable: ' + (err.message || err));
+      stopCamera();
+    });
+
+    function setupNativeDetector(supported){
+      var wanted = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','codabar','itf','qr_code'];
+      var formats = supported ? wanted.filter(function(f){ return supported.indexOf(f) !== -1; }) : wanted;
+      try{ nativeDetector = new BarcodeDetector({ formats: formats.length ? formats : wanted }); }
+      catch(e){ nativeDetector = new BarcodeDetector(); }
+      nativeLoopId = setInterval(function(){
+        if(video.readyState < 2) return;
+        nativeDetector.detect(video).then(function(codes){
+          if(codes && codes.length) handleScan(codes[0].rawValue);
+        }).catch(function(){ /* transient decode errors are normal, ignore */ });
+      }, 180);
+    }
+  }
+
+  function startQuaggaScanner(){
+    scanMode = 'quagga';
+    document.getElementById('native-video').style.display = 'none';
+    var target = document.getElementById('reader');
+    target.style.display = 'block';
+    target.innerHTML = '';
+
+    Quagga.init({
+      inputStream: {
+        name: "Live",
+        type: "LiveStream",
+        target: target,
+        constraints: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      },
+      locator: { patchSize: "medium", halfSample: true },
+      numOfWorkers: (navigator.hardwareConcurrency ? Math.min(navigator.hardwareConcurrency, 4) : 2),
+      frequency: 10,
+      decoder: {
+        readers: ["ean_reader", "ean_8_reader", "upc_reader", "upc_e_reader", "code_128_reader", "code_39_reader", "codabar_reader", "i2of5_reader"]
+      },
+      locate: true
+    }, function(err){
+      if(err){
+        toast('Camera unavailable: ' + err);
+        stopCamera();
+        return;
+      }
+      Quagga.start();
+      var videoEl = target.querySelector('video');
+      if(videoEl){
+        videoEl.setAttribute('playsinline', 'true');
+        videoEl.muted = true;
+      }
+      try{
+        var track = Quagga.CameraAccess.getActiveTrack();
+        if(track) setupTorch(track);
+      }catch(e){}
+    });
+
+    Quagga.onDetected(function(result){
+      if(!result || !result.codeResult || !result.codeResult.code) return;
+      handleScan(result.codeResult.code);
+    });
+  }
+
+  function setupTorch(track){
+    var torchRow = document.getElementById('torch-row');
+    var caps = track && track.getCapabilities ? track.getCapabilities() : {};
+    if(caps && caps.torch){
+      torchRow.style.display = 'block';
+      var on = false;
+      document.getElementById('btn-torch').onclick = function(){
+        on = !on;
+        track.applyConstraints({ advanced: [{ torch: on }] }).catch(function(){
+          toast('Flashlight not controllable on this device');
+        });
+      };
+    } else {
+      torchRow.style.display = 'none';
+    }
+  }
+
+  function stopCamera(){
+    if(scanMode === 'native'){
+      if(nativeLoopId){ clearInterval(nativeLoopId); nativeLoopId = null; }
+      if(nativeStream){ nativeStream.getTracks().forEach(function(t){ t.stop(); }); nativeStream = null; }
+    } else if(scanMode === 'quagga'){
+      try{ Quagga.offDetected(); Quagga.stop(); }catch(e){}
+    }
+    scanMode = null;
+    lastScanCode = null;
+    document.getElementById('torch-row').style.display = 'none';
+    readerWrap.classList.remove('show');
+    document.getElementById('scan-tip').style.display = 'none';
+    btnStart.style.display = 'block';
+    btnStop.style.display = 'none';
+  }
+
+  document.getElementById('btn-take-photo').addEventListener('click', function(){
+    document.getElementById('photo-input').click();
+  });
+
+  document.getElementById('photo-input').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var btn = document.getElementById('btn-take-photo');
+    btn.textContent = 'Reading barcode…';
+    btn.disabled = true;
+
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      var dataUrl = ev.target.result;
+      if(typeof Quagga === 'undefined'){
+        toast('Scanner library failed to load — check your connection.');
+        resetPhotoBtn();
+        return;
+      }
+      Quagga.decodeSingle({
+        src: dataUrl,
+        numOfWorkers: 0,
+        inputStream: { size: 1600 },
+        locator: { patchSize: "medium", halfSample: true },
+        locate: true,
+        decoder: {
+          readers: ["ean_reader", "ean_8_reader", "upc_reader", "upc_e_reader", "code_128_reader", "code_39_reader", "codabar_reader", "i2of5_reader"]
+        }
+      }, function(result){
+        resetPhotoBtn();
+        if(result && result.codeResult && result.codeResult.code){
+          handleScan(result.codeResult.code);
+        } else {
+          toast("Couldn't find a barcode in that photo — try getting closer and keeping it flat/level.");
+        }
+      });
+    };
+    reader.onerror = function(){
+      toast('Could not read that photo — try again.');
+      resetPhotoBtn();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+
+    function resetPhotoBtn(){
+      btn.textContent = '📸 Take a Photo to Scan';
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('btn-manual-lookup').addEventListener('click', function(){
+    var v = document.getElementById('manual-barcode').value.trim();
+    if(v) handleScan(v);
+  });
+  document.getElementById('manual-barcode').addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('btn-manual-lookup').click(); }
+  });
+
+  function handleScan(code){
+    code = String(code).trim();
+    var now = Date.now();
+    if(code === lastScanCode && (now - lastScanTime) < 1500) return;
+    lastScanCode = code;
+    lastScanTime = now;
+    lastFoundBarcode = code;
+    var item = state.items.find(function(i){ return i.barcode === code; });
+    var area = document.getElementById('result-area');
+
+    if(item){
+      area.innerHTML =
+        '<div class="card result-card">' +
+          '<div class="rcode mono">' + esc(item.barcode.indexOf('noupc-')===0 ? 'no code on file' : item.barcode) + '</div>' +
+          '<div class="rname">' + esc(item.name) + '</div>' +
+          '<div class="rprice">' + money(item.price) + ' / ' + esc(item.unit || 'unit') + '</div>' +
+          qtyBlockHTML(item, existingQty(item.barcode), existingCountUnit(item.barcode) || item.unit) +
+        '</div>';
+    } else {
+      area.innerHTML =
+        '<div class="card result-card">' +
+          '<span class="unknown-tag">NOT ON FILE</span>' +
+          '<div class="rcode mono">' + esc(code) + '</div>' +
+          '<label style="margin-top:12px; text-align:left;">Link this barcode to an item on your list</label>' +
+          '<div class="row">' +
+            '<input type="text" id="link-search" placeholder="Search item by name">' +
+            '<button class="btn small" id="btn-browse-all" style="flex:0 0 auto;">Browse list</button>' +
+          '</div>' +
+          '<div id="link-results" style="margin-top:6px; text-align:left; max-height:280px; overflow-y:auto;"></div>' +
+          '<div class="divider">or</div>' +
+          '<button class="btn ghost" id="btn-show-newitem">Add as a brand-new item</button>' +
+          '<div id="newitem-form" style="display:none; margin-top:12px; text-align:left;">' +
+            '<label style="margin-top:0;">Item name</label>' +
+            '<input type="text" id="new-scan-name" placeholder="Enter name">' +
+            '<label>Price per unit</label>' +
+            '<input type="number" id="new-scan-price" step="0.01" placeholder="0.00">' +
+            '<label>Unit (kg, L, unit...)</label>' +
+            '<input type="text" id="new-scan-unit" placeholder="unit">' +
+            '<button class="btn primary" id="btn-save-unknown" style="margin-top:12px;">Add &amp; Count</button>' +
+          '</div>' +
+        '</div>';
+      wireLinkSearch(code);
+      document.getElementById('btn-show-newitem').addEventListener('click', function(){
+        document.getElementById('newitem-form').style.display = 'block';
+        this.style.display = 'none';
+      });
+      document.getElementById('btn-save-unknown').addEventListener('click', function(){
+        var nm = document.getElementById('new-scan-name').value.trim();
+        var pr = parseFloat(document.getElementById('new-scan-price').value) || 0;
+        var un = document.getElementById('new-scan-unit').value.trim();
+        if(!nm){ toast('Enter an item name first'); return; }
+        var newItem = { barcode: code, name: nm, price: pr, unit: un };
+        state.items.push(newItem);
+        saveState();
+        syncUpsertItem(newItem);
+        handleScan(code);
+      });
+    }
+    wireQtyBlock();
+  }
+
+  function linkBarcodeToItem(item, newCode){
+    var oldCode = item.barcode;
+    item.barcode = newCode;
+    var movedCount = null;
+    if(state.counts[oldCode]){
+      var c = state.counts[oldCode];
+      delete state.counts[oldCode];
+      c.barcode = newCode;
+      state.counts[newCode] = c;
+      movedCount = c;
+    }
+    saveState();
+    syncUpsertItem(item, oldCode);
+    if(movedCount){
+      syncDeleteCount(oldCode);
+      syncUpsertCount(newCode, movedCount);
+    }
+    toast('Linked "' + item.name + '" to this code');
+    handleScan(newCode);
+  }
+
+  function wireLinkSearch(code){
+    var input = document.getElementById('link-search');
+    var results = document.getElementById('link-results');
+    var browseBtn = document.getElementById('btn-browse-all');
+    var browsing = false;
+
+    function renderResults(q){
+      var pool = state.items;
+      var matches;
+      if(q){
+        var ql = norm(q);
+        matches = pool.filter(function(i){ return norm(i.name).indexOf(ql) !== -1; })
+          .sort(function(a,b){ return a.name.localeCompare(b.name); });
+        if(!browsing) matches = matches.slice(0,8);
+      } else if(browsing){
+        matches = pool.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+      } else {
+        matches = pool.filter(function(i){ return i.barcode.indexOf('noupc-') === 0; }).slice(0,6);
+      }
+      if(!matches.length){
+        results.innerHTML = '<div style="font-size:12px; color:var(--ink-soft); padding:6px 2px;">' + (q ? 'No matching items' : 'Type a name to search, or tap "Browse list" to see everything') + '</div>';
+        return;
+      }
+      results.innerHTML = matches.map(function(i){
+        var codeLabel = i.barcode.indexOf('noupc-') === 0 ? 'no code yet' : i.barcode;
+        return (
+          '<div class="item-row" data-pick="' + esc(i.barcode) + '" style="cursor:pointer;">' +
+            '<div class="info"><div class="n">' + esc(i.name) + '</div><div class="c mono">' + esc(codeLabel) + (i.unit ? ' · ' + esc(i.unit) : '') + '</div></div>' +
+            '<div class="p mono">' + money(i.price) + '</div>' +
+          '</div>'
+        );
+      }).join('');
+      results.querySelectorAll('[data-pick]').forEach(function(row){
+        row.addEventListener('click', function(){
+          var item = state.items.find(function(i){ return i.barcode === row.dataset.pick; });
+          if(item) linkBarcodeToItem(item, code);
+        });
+      });
+    }
+
+    input.addEventListener('input', function(){ renderResults(input.value.trim()); });
+    browseBtn.addEventListener('click', function(){
+      browsing = !browsing;
+      browseBtn.textContent = browsing ? 'Show suggested' : 'Browse list';
+      renderResults(input.value.trim());
+    });
+    renderResults('');
+  }
+
+  function existingQty(code){
+    return state.counts[code] ? state.counts[code].qty : 1;
+  }
+  function existingCountUnit(code){
+    return state.counts[code] ? state.counts[code].countUnit : null;
+  }
+
+  function qtyBlockHTML(item, qty, countUnit){
+    countUnit = countUnit || item.unit || 'unit';
+    var toggle = '';
+    if(item.altUnit && item.altFactor){
+      toggle =
+        '<div class="row" style="max-width:280px; margin:14px auto 0;">' +
+          '<button type="button" class="btn small unit-toggle-btn' + (countUnit === item.unit ? ' primary' : ' ghost') + '" data-unit="' + esc(item.unit) + '" data-factor="1">' + esc(item.unit) + '</button>' +
+          '<button type="button" class="btn small unit-toggle-btn' + (countUnit === item.altUnit ? ' primary' : ' ghost') + '" data-unit="' + esc(item.altUnit) + '" data-factor="' + item.altFactor + '">' + esc(item.altUnit) + '</button>' +
+        '</div>';
+    }
+    return (
+      toggle +
+      '<label id="scan-qty-label" style="text-align:center; margin-top:14px;">Quantity counted (' + esc(countUnit) + ')</label>' +
+      '<div class="ticket-mid" style="justify-content:center;">' +
+        '<div class="qty-stepper">' +
+          '<button data-step="-1">−</button>' +
+          '<input type="number" id="scan-qty" value="' + qty + '" step="0.1" min="0">' +
+          '<button data-step="1">+</button>' +
+        '</div>' +
+      '</div>' +
+      '<input type="hidden" id="scan-count-unit" value="' + esc(countUnit) + '">' +
+      '<input type="hidden" id="scan-count-factor" value="' + (countUnit === item.altUnit ? item.altFactor : 1) + '">' +
+      '<button class="btn stamp" id="btn-save-count" style="margin-top:14px;">✓ Save Count</button>' +
+      '<button class="btn ghost" id="btn-scan-next" style="margin-top:10px;">Scan Next</button>'
+    );
+  }
+
+  function wireQtyBlock(){
+    var stepBtns = document.querySelectorAll('#result-area [data-step]');
+    stepBtns.forEach(function(b){
+      b.addEventListener('click', function(){
+        var input = document.getElementById('scan-qty');
+        var v = (parseFloat(input.value)||0) + parseFloat(b.dataset.step);
+        input.value = Math.max(0, v);
+      });
+    });
+    var unitBtns = document.querySelectorAll('#result-area .unit-toggle-btn');
+    unitBtns.forEach(function(b){
+      b.addEventListener('click', function(){
+        unitBtns.forEach(function(x){ x.classList.remove('primary'); x.classList.add('ghost'); });
+        b.classList.remove('ghost'); b.classList.add('primary');
+        document.getElementById('scan-count-unit').value = b.dataset.unit;
+        document.getElementById('scan-count-factor').value = b.dataset.factor;
+        document.getElementById('scan-qty-label').textContent = 'Quantity counted (' + b.dataset.unit + ')';
+      });
+    });
+    var saveBtn = document.getElementById('btn-save-count');
+    if(saveBtn){
+      saveBtn.addEventListener('click', function(){
+        var qty = parseFloat(document.getElementById('scan-qty').value) || 0;
+        var countUnit = document.getElementById('scan-count-unit').value;
+        var factor = parseFloat(document.getElementById('scan-count-factor').value) || 1;
+        var item = state.items.find(function(i){ return i.barcode === lastFoundBarcode; });
+        if(!item) return;
+        state.counts[item.barcode] = { barcode:item.barcode, name:item.name, price:item.price, unit:item.unit||'', qty:qty, countUnit:countUnit, factor:factor, ts:Date.now() };
+        saveState();
+        syncUpsertCount(item.barcode, state.counts[item.barcode]);
+        toast('Saved: ' + item.name + ' × ' + qty + ' ' + countUnit);
+      });
+    }
+    var nextBtn = document.getElementById('btn-scan-next');
+    if(nextBtn){
+      nextBtn.addEventListener('click', function(){
+        document.getElementById('result-area').innerHTML = '';
+        document.getElementById('manual-barcode').value = '';
+        lastScanCode = null;
+      });
+    }
+  }
+
+  // ================= COUNT SHEET =================
+  function renderSheet(){
+    var list = document.getElementById('sheet-list');
+    var entries = Object.values(state.counts).sort(function(a,b){ return b.ts - a.ts; });
+    document.getElementById('sheet-empty').style.display = entries.length ? 'none' : 'block';
+    list.innerHTML = entries.map(function(c){
+      var displayUnit = c.countUnit || c.unit || 'ea';
+      var effPrice = (c.price||0) * (c.factor||1);
+      return (
+        '<div class="ticket" data-code="' + esc(c.barcode) + '">' +
+          '<div class="ticket-body" style="position:relative;">' +
+            '<div class="stamp-mark show">DONE</div>' +
+            '<div class="ticket-top">' +
+              '<div>' +
+                '<div class="ticket-name">' + esc(c.name) + '</div>' +
+                '<div class="ticket-code mono">' + esc(c.barcode) + '</div>' +
+              '</div>' +
+              '<button class="ticket-x" data-del="' + esc(c.barcode) + '">✕</button>' +
+            '</div>' +
+            '<div class="ticket-mid">' +
+              '<div class="qty-stepper">' +
+                '<button data-adj="-1" data-code="' + esc(c.barcode) + '">−</button>' +
+                '<input type="number" class="sheet-qty" step="0.1" data-code="' + esc(c.barcode) + '" value="' + c.qty + '">' +
+                '<button data-adj="1" data-code="' + esc(c.barcode) + '">+</button>' +
+              '</div>' +
+              '<div style="font-size:11px; color:var(--ink-soft);">' + esc(displayUnit) + '</div>' +
+              '<div class="ticket-price">' +
+                '<div class="unit">' + money(effPrice) + '/' + esc(displayUnit) + '</div>' +
+                '<div class="line">' + money(c.qty * effPrice) + '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    list.querySelectorAll('[data-del]').forEach(function(b){
+      b.addEventListener('click', function(){
+        delete state.counts[b.dataset.del];
+        saveState(); renderSheet();
+        syncDeleteCount(b.dataset.del);
+      });
+    });
+    list.querySelectorAll('[data-adj]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var c = state.counts[b.dataset.code];
+        c.qty = Math.max(0, (c.qty||0) + parseFloat(b.dataset.adj));
+        saveState(); renderSheet();
+        syncUpsertCount(b.dataset.code, c);
+      });
+    });
+    list.querySelectorAll('.sheet-qty').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        var c = state.counts[inp.dataset.code];
+        c.qty = Math.max(0, parseFloat(inp.value) || 0);
+        saveState(); renderSheet();
+        syncUpsertCount(inp.dataset.code, c);
+      });
+    });
+  }
+
+  document.getElementById('btn-clear-counts').addEventListener('click', function(){
+    if(!Object.keys(state.counts).length) return;
+    if(confirm('Clear all counted items? This cannot be undone.')){
+      state.counts = {};
+      saveState(); renderSheet();
+      syncClearCounts();
+      toast('Count sheet cleared');
+    }
+  });
+
+  document.getElementById('btn-export').addEventListener('click', function(){
+    var entries = Object.values(state.counts).sort(function(a,b){ return a.name.localeCompare(b.name); });
+    if(!entries.length){ toast('Nothing to export yet'); return; }
+    var rows = entries.map(function(c){
+      var displayUnit = c.countUnit || c.unit || '';
+      var effPrice = Math.round((c.price||0) * (c.factor||1) * 10000) / 10000;
+      return {
+        Barcode: c.barcode.indexOf('noupc-')===0 ? '' : c.barcode,
+        Item: c.name,
+        Unit: displayUnit,
+        'Qty Counted': c.qty,
+        'Unit Price': effPrice,
+        'Total Value': Math.round(c.qty * effPrice * 100) / 100
+      };
+    });
+    var totalVal = rows.reduce(function(s,r){ return s + r['Total Value']; }, 0);
+    rows.push({ Barcode:'', Item:'', Unit:'', 'Qty Counted':'', 'Unit Price':'TOTAL', 'Total Value': Math.round(totalVal*100)/100 });
+    var ws = XLSX.utils.json_to_sheet(rows);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Count');
+    var d = new Date();
+    var fname = 'inventory-count-' + d.toISOString().slice(0,10) + '.xlsx';
+    XLSX.writeFile(wb, fname);
+    toast('Exported ' + fname);
+  });
+
+  // ================= ITEMS =================
+  document.getElementById('file-input').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      var data = new Uint8Array(ev.target.result);
+      var wb = XLSX.read(data, { type: 'array' });
+      var sheet = wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      if(!rows.length){ toast('That file looks empty'); return; }
+      showMapping(rows);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // priorityLists: array of keyword arrays, checked in order; first list with any match wins.
+  // fallback: index returned if nothing matches (use -1 to mean "none")
+  function guessCol(headers, priorityLists, fallback){
+    for(var p=0; p<priorityLists.length; p++){
+      for(var i=0;i<headers.length;i++){
+        var h = String(headers[i]).toLowerCase();
+        if(priorityLists[p].some(function(k){ return h.indexOf(k) !== -1; })) return i;
+      }
+    }
+    return fallback === undefined ? 0 : fallback;
+  }
+
+  function showMapping(rows){
+    var headers = rows[0];
+    var mapArea = document.getElementById('mapping-area');
+    var opts = headers.map(function(h,i){ return '<option value="'+i+'">'+esc(String(h || ('Column '+(i+1))))+'</option>'; }).join('');
+    var optsWithNone = '<option value="-1">— None —</option>' + opts;
+
+    var bGuess = guessCol(headers, [['barcode','upc','ean','sku','code']]);
+    var nGuess = guessCol(headers, [['name','item','description','product','produit','nom']]);
+    // Prefer a per-unit price column (e.g. "Prix Unitaire") over a case/bulk price column.
+    var pGuess = guessCol(headers, [['unit price','prix unitaire','unitaire','per unit'], ['price','prix','cost','coût']]);
+    var uGuess = guessCol(headers, [['format','uom','unité','unite','measure']], -1);
+
+    mapArea.style.display = 'block';
+    mapArea.innerHTML =
+      '<div class="map-row">' +
+        '<div><label style="margin-top:0;">Barcode / code column</label><select id="map-barcode">'+opts+'</select></div>' +
+        '<div><label style="margin-top:0;">Name column</label><select id="map-name">'+opts+'</select></div>' +
+      '</div>' +
+      '<div class="map-row">' +
+        '<div><label style="margin-top:0;">Price column</label><select id="map-price">'+opts+'</select></div>' +
+        '<div><label style="margin-top:0;">Unit of measure (optional)</label><select id="map-unit">'+optsWithNone+'</select></div>' +
+      '</div>' +
+      '<div style="font-size:12px; color:var(--ink-soft); margin-top:4px;">' + (rows.length-1) + ' rows found. First row treated as headers. Items with no code (e.g. fresh produce) will still import — you\'ll count them from the Items list instead of scanning.</div>' +
+      '<button class="btn primary" id="btn-confirm-import" style="margin-top:12px;">Import ' + (rows.length-1) + ' Items</button>';
+
+    document.getElementById('map-barcode').value = bGuess;
+    document.getElementById('map-name').value = nGuess;
+    document.getElementById('map-price').value = pGuess;
+    document.getElementById('map-unit').value = uGuess;
+
+    document.getElementById('btn-confirm-import').addEventListener('click', function(){
+      var bi = parseInt(document.getElementById('map-barcode').value);
+      var ni = parseInt(document.getElementById('map-name').value);
+      var pi = parseInt(document.getElementById('map-price').value);
+      var ui = parseInt(document.getElementById('map-unit').value);
+      var added = 0, updated = 0;
+      for(var r=1; r<rows.length; r++){
+        var row = rows[r];
+        if(!row || row.length === 0) continue;
+        var rawCode = row[bi];
+        var barcode = (rawCode === undefined || rawCode === null || rawCode === 0 || String(rawCode).trim()==='') ? '' : String(rawCode).trim();
+        var name = String(row[ni] !== undefined ? row[ni] : '').trim();
+        if(!barcode && !name) continue;
+        if(!barcode) barcode = 'noupc-' + name.toLowerCase().replace(/[^a-z0-9]+/g,'-');
+        var price = parseFloat(row[pi]) || 0;
+        var unit = (ui >= 0 && row[ui] !== undefined) ? String(row[ui]).trim() : '';
+        if(unit === '0') unit = '';
+        var existing = state.items.find(function(it){ return it.barcode === barcode; });
+        if(existing){ existing.name = name || existing.name; existing.price = price; existing.unit = unit; updated++; }
+        else { state.items.push({ barcode: barcode, name: name || '(unnamed)', price: price, unit: unit }); added++; }
+      }
+      saveState();
+      syncSetItems();
+      mapArea.style.display = 'none';
+      document.getElementById('file-input').value = '';
+      toast(added + ' added, ' + updated + ' updated');
+      renderItems();
+    });
+  }
+
+  document.getElementById('btn-add-item').addEventListener('click', function(){
+    var bc = document.getElementById('new-barcode').value.trim();
+    var nm = document.getElementById('new-name').value.trim();
+    var pr = parseFloat(document.getElementById('new-price').value) || 0;
+    var un = document.getElementById('new-unit').value.trim();
+    if(!nm){ toast('Enter an item name'); return; }
+    if(!bc) bc = 'noupc-' + nm.toLowerCase().replace(/[^a-z0-9]+/g,'-') + '-' + Date.now();
+    var newItem = { barcode: bc, name: nm, price: pr, unit: un };
+    state.items.push(newItem);
+    saveState();
+    syncUpsertItem(newItem);
+    document.getElementById('new-barcode').value = '';
+    document.getElementById('new-name').value = '';
+    document.getElementById('new-price').value = '';
+    document.getElementById('new-unit').value = '';
+    toast('Added ' + nm);
+    renderItems();
+  });
+
+  document.getElementById('item-search').addEventListener('input', renderItems);
+
+  function renderItems(){
+    var q = norm(document.getElementById('item-search').value.trim());
+    var list = document.getElementById('items-list');
+    var items = state.items
+      .filter(function(i){ return !q || norm(i.name).indexOf(q) !== -1 || i.barcode.toLowerCase().indexOf(q) !== -1; })
+      .sort(function(a,b){ return a.name.localeCompare(b.name); });
+    document.getElementById('items-empty').style.display = state.items.length ? 'none' : 'block';
+    list.innerHTML = items.map(function(i){
+      var codeLabel = i.barcode.indexOf('noupc-') === 0 ? 'no code' : i.barcode;
+      var unitLabel = i.unit ? esc(i.unit) : '<em>no unit set</em>';
+      var altLabel = i.altUnit ? (' · also counts as ' + esc(i.altUnit)) : '';
+      return (
+        '<div class="item-row-wrap" data-wrap="' + esc(i.barcode) + '">' +
+        '<div class="item-row">' +
+          '<div class="info"><div class="n">' + esc(i.name) + '</div><div class="c mono">' + esc(codeLabel) + ' · ' + unitLabel + altLabel + '</div></div>' +
+          '<input class="p mono item-price-edit" data-code="' + esc(i.barcode) + '" type="number" step="0.01" value="' + i.price + '">' +
+          '<button class="btn small" data-unit-item="' + esc(i.barcode) + '" style="flex:0 0 auto; padding:8px 8px; font-size:12px;">Units</button>' +
+          '<button class="btn small" data-count-item="' + esc(i.barcode) + '" style="flex:0 0 auto; padding:8px 8px; font-size:12px;">Count</button>' +
+          '<button class="del" data-del-item="' + esc(i.barcode) + '">✕</button>' +
+        '</div>' +
+        '<div class="unit-edit" id="unit-edit-' + esc(i.barcode) + '" style="display:none;"></div>' +
+        '</div>'
+      );
+    }).join('');
+    list.querySelectorAll('.item-price-edit').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        var item = state.items.find(function(i){ return i.barcode === inp.dataset.code; });
+        if(item){ item.price = parseFloat(inp.value) || 0; saveState(); syncUpsertItem(item); }
+      });
+    });
+    list.querySelectorAll('[data-count-item]').forEach(function(b){
+      b.addEventListener('click', function(){
+        handleScan(b.dataset.countItem);
+        document.querySelector('.tabbar button[data-tab="scan"]').click();
+        window.scrollTo(0,0);
+      });
+    });
+    list.querySelectorAll('[data-del-item]').forEach(function(b){
+      b.addEventListener('click', function(){
+        state.items = state.items.filter(function(i){ return i.barcode !== b.dataset.delItem; });
+        saveState(); renderItems();
+        syncDeleteItem(b.dataset.delItem);
+      });
+    });
+    list.querySelectorAll('[data-unit-item]').forEach(function(b){
+      b.addEventListener('click', function(){ toggleUnitEdit(b.dataset.unitItem); });
+    });
+  }
+
+  function toggleUnitEdit(barcode){
+    var panel = document.getElementById('unit-edit-' + barcode);
+    if(!panel) return;
+    if(panel.style.display === 'block'){ panel.style.display = 'none'; return; }
+    var item = state.items.find(function(i){ return i.barcode === barcode; });
+    if(!item) return;
+    panel.style.display = 'block';
+    panel.innerHTML =
+      '<div class="card" style="margin:8px 0 14px;">' +
+        '<label style="margin-top:0;">Base unit (used for price)</label>' +
+        '<input type="text" class="ue-unit" list="unit-suggestions" value="' + esc(item.unit||'') + '" placeholder="kg, L, unit...">' +
+        '<div style="font-size:12px; color:var(--ink-soft); margin:10px 0 4px;">Optional: also count this item a different way</div>' +
+        '<label style="margin-top:0;">Alternate counting unit</label>' +
+        '<input type="text" class="ue-altunit" list="unit-suggestions" value="' + esc(item.altUnit||'') + '" placeholder="e.g. bag, case, unit">' +
+        '<label>How many ' + esc(item.unit||'base units') + ' is 1 of that?</label>' +
+        '<input type="number" class="ue-altfactor" step="0.01" value="' + (item.altFactor||'') + '" placeholder="e.g. 2.3">' +
+        '<div class="row" style="margin-top:12px;">' +
+          '<button class="btn primary ue-save">Save</button>' +
+          '<button class="btn ghost ue-clear">Clear alt unit</button>' +
+        '</div>' +
+      '</div>';
+    panel.querySelector('.ue-save').addEventListener('click', function(){
+      item.unit = panel.querySelector('.ue-unit').value.trim();
+      var altU = panel.querySelector('.ue-altunit').value.trim();
+      var altF = parseFloat(panel.querySelector('.ue-altfactor').value);
+      if(altU && altF > 0){ item.altUnit = altU; item.altFactor = altF; }
+      else { delete item.altUnit; delete item.altFactor; }
+      saveState();
+      syncUpsertItem(item);
+      panel.style.display = 'none';
+      renderItems();
+      toast('Updated units for ' + item.name);
+    });
+    panel.querySelector('.ue-clear').addEventListener('click', function(){
+      delete item.altUnit;
+      delete item.altFactor;
+      saveState();
+      syncUpsertItem(item);
+      panel.style.display = 'none';
+      renderItems();
+    });
+  }
+
+  function norm(s){
+    return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  }
+
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
+
+  // ---------- service worker ----------
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js').catch(function(){});
+    });
+  }
+
+  renderTopbar();
+  renderItems();
+  initSync();
+})();
+</script>
+</body>
+</html>

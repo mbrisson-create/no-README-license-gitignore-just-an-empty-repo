@@ -1,0 +1,12 @@
+{
+  "name": "Stock Check — Inventory Counter",
+  "short_name": "Stock Check",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#E3E6E0",
+  "theme_color": "#1E2B24",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
