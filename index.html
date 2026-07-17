@@ -769,7 +769,8 @@
       '<div class="row" style="max-width:280px; margin:14px auto 0;">' +
         '<button type="button" class="btn small unit-toggle-btn' + (countUnit === item.unit ? ' primary' : ' ghost') + '" data-unit="' + esc(item.unit) + '" data-factor="1">' + esc(item.unit || '(base)') + '</button>' +
         '<button type="button" class="btn small unit-toggle-btn' + (countUnit === other ? ' primary' : ' ghost') + '" data-unit="' + esc(other) + '" data-factor="' + (hasFactor ? item.altFactor : '') + '"' + (hasFactor ? '' : ' data-needs-factor="1"') + '>' + esc(other) + '</button>' +
-      '</div>';
+      '</div>' +
+      '<div id="unit-factor-setup" style="display:none;"></div>';
     return (
       toggle +
       '<label id="scan-qty-label" style="text-align:center; margin-top:14px;">Quantity counted (' + esc(countUnit) + ')</label>' +
@@ -797,28 +798,57 @@
       });
     });
     var unitBtns = document.querySelectorAll('#result-area .unit-toggle-btn');
+    function activateUnitBtn(b){
+      unitBtns.forEach(function(x){ x.classList.remove('primary'); x.classList.add('ghost'); });
+      b.classList.remove('ghost'); b.classList.add('primary');
+      document.getElementById('scan-count-unit').value = b.dataset.unit;
+      document.getElementById('scan-count-factor').value = b.dataset.factor;
+      document.getElementById('scan-qty-label').textContent = 'Quantity counted (' + b.dataset.unit + ')';
+    }
     unitBtns.forEach(function(b){
       b.addEventListener('click', function(){
         if(b.dataset.needsFactor){
           var item = state.items.find(function(i){ return i.barcode === lastFoundBarcode; });
           if(!item) return;
           var baseLabel = item.unit || 'base unit';
-          var answer = window.prompt('How many ' + baseLabel + ' is 1 ' + b.dataset.unit + ' of "' + item.name + '"?', '');
-          var factor = parseFloat(answer);
-          if(!answer || isNaN(factor) || factor <= 0) return; // cancelled or invalid — stay on current unit
-          item.altUnit = b.dataset.unit;
-          item.altFactor = factor;
-          saveState();
-          syncUpsertItem(item);
-          b.dataset.factor = factor;
-          delete b.dataset.needsFactor;
-          toast('Saved: 1 ' + b.dataset.unit + ' = ' + factor + ' ' + baseLabel);
+          var setup = document.getElementById('unit-factor-setup');
+          setup.style.display = 'block';
+          setup.innerHTML =
+            '<div class="card" style="margin:10px 0 0; text-align:left;">' +
+              '<label style="margin-top:0;">How many ' + esc(baseLabel) + ' is 1 ' + esc(b.dataset.unit) + ' of "' + esc(item.name) + '"?</label>' +
+              '<input type="number" id="unit-factor-input" step="any" min="0" placeholder="e.g. 750">' +
+              '<div class="row" style="margin-top:10px;">' +
+                '<button type="button" class="btn primary small" id="unit-factor-save">Save</button>' +
+                '<button type="button" class="btn ghost small" id="unit-factor-cancel">Cancel</button>' +
+              '</div>' +
+            '</div>';
+          var factorInput = document.getElementById('unit-factor-input');
+          factorInput.focus();
+          function saveFactor(){
+            var factor = parseFloat(factorInput.value);
+            if(!(factor > 0)){ toast('Enter a number greater than 0'); return; }
+            item.altUnit = b.dataset.unit;
+            item.altFactor = factor;
+            saveState();
+            syncUpsertItem(item);
+            b.dataset.factor = factor;
+            delete b.dataset.needsFactor;
+            setup.style.display = 'none';
+            setup.innerHTML = '';
+            activateUnitBtn(b);
+            toast('Saved: 1 ' + b.dataset.unit + ' = ' + factor + ' ' + baseLabel);
+          }
+          factorInput.addEventListener('keydown', function(e){
+            if(e.key === 'Enter'){ e.preventDefault(); saveFactor(); }
+          });
+          document.getElementById('unit-factor-save').addEventListener('click', saveFactor);
+          document.getElementById('unit-factor-cancel').addEventListener('click', function(){
+            setup.style.display = 'none';
+            setup.innerHTML = '';
+          });
+          return;
         }
-        unitBtns.forEach(function(x){ x.classList.remove('primary'); x.classList.add('ghost'); });
-        b.classList.remove('ghost'); b.classList.add('primary');
-        document.getElementById('scan-count-unit').value = b.dataset.unit;
-        document.getElementById('scan-count-factor').value = b.dataset.factor;
-        document.getElementById('scan-qty-label').textContent = 'Quantity counted (' + b.dataset.unit + ')';
+        activateUnitBtn(b);
       });
     });
     var saveBtn = document.getElementById('btn-save-count');
