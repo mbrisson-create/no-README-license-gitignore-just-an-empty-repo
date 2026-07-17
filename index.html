@@ -461,11 +461,23 @@
       }
     ).then(function(){
       var stream = video.srcObject;
-      if(stream) setupTorch(stream.getVideoTracks()[0]);
+      if(stream){
+        var track = stream.getVideoTracks()[0];
+        resetZoom(track);
+        setupTorch(track);
+      }
     }).catch(function(err){
       toast('Camera unavailable: ' + (err.message || err));
       stopCamera();
     });
+  }
+
+  // iOS defaults some rear cameras to a zoomed-in crop over getUserMedia; pull it back to 1x.
+  function resetZoom(track){
+    var caps = track && track.getCapabilities ? track.getCapabilities() : {};
+    if(caps && caps.zoom){
+      track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }).catch(function(){});
+    }
   }
 
   function setupTorch(track){
