@@ -754,14 +754,16 @@
     return state.counts[code] ? state.counts[code].countUnit : null;
   }
 
-  // Every item can be counted either in its own unit or in kg — whichever it isn't already.
+  // Items with no alt unit configured yet default to kg (or "unit" if the base is already kg).
+  // An item that already has its own configured alt unit (kg, unit, or anything else set via
+  // the Items tab) always keeps that pairing instead of being forced onto kg/unit.
   function otherCountUnit(baseUnit){
     return String(baseUnit || '').trim().toLowerCase() === 'kg' ? 'unit' : 'kg';
   }
 
   function qtyBlockHTML(item, qty, countUnit){
     countUnit = countUnit || item.unit || 'unit';
-    var other = otherCountUnit(item.unit);
+    var other = item.altUnit || otherCountUnit(item.unit);
     var hasFactor = item.altUnit === other && item.altFactor > 0;
     var toggle =
       '<div class="row" style="max-width:280px; margin:14px auto 0;">' +
