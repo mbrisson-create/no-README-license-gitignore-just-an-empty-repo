@@ -768,7 +768,7 @@
     var toggle =
       '<div class="row" style="max-width:280px; margin:14px auto 0;">' +
         '<button type="button" class="btn small unit-toggle-btn' + (countUnit === item.unit ? ' primary' : ' ghost') + '" data-unit="' + esc(item.unit) + '" data-factor="1">' + esc(item.unit || '(base)') + '</button>' +
-        '<button type="button" class="btn small unit-toggle-btn' + (countUnit === other ? ' primary' : ' ghost') + '" data-unit="' + esc(other) + '" data-factor="' + (hasFactor ? item.altFactor : '') + '"' + (hasFactor ? '' : ' data-needs-factor="1"') + '>' + esc(other) + '</button>' +
+        '<button type="button" class="btn small unit-toggle-btn' + (countUnit === other ? ' primary' : ' ghost') + '" data-unit="' + esc(other) + '" data-factor="' + (hasFactor ? item.altFactor : '') + '"' + (hasFactor ? '' : ' data-needs-factor="1"') + '>' + (hasFactor ? esc(other) : 'Set other counting unit') + '</button>' +
       '</div>' +
       '<div id="unit-factor-setup" style="display:none;"></div>';
     return (
@@ -810,41 +810,14 @@
         if(b.dataset.needsFactor){
           var item = state.items.find(function(i){ return i.barcode === lastFoundBarcode; });
           if(!item) return;
-          var baseLabel = item.unit || 'base unit';
           var setup = document.getElementById('unit-factor-setup');
           setup.style.display = 'block';
-          setup.innerHTML =
-            '<div class="card" style="margin:10px 0 0; text-align:left;">' +
-              '<label style="margin-top:0;">How many ' + esc(baseLabel) + ' is 1 ' + esc(b.dataset.unit) + ' of "' + esc(item.name) + '"?</label>' +
-              '<input type="number" id="unit-factor-input" step="any" min="0" placeholder="e.g. 750">' +
-              '<div class="row" style="margin-top:10px;">' +
-                '<button type="button" class="btn primary small" id="unit-factor-save">Save</button>' +
-                '<button type="button" class="btn ghost small" id="unit-factor-cancel">Cancel</button>' +
-              '</div>' +
-            '</div>';
-          var factorInput = document.getElementById('unit-factor-input');
-          factorInput.focus();
-          function saveFactor(){
-            var factor = parseFloat(factorInput.value);
-            if(!(factor > 0)){ toast('Enter a number greater than 0'); return; }
-            item.altUnit = b.dataset.unit;
-            item.altFactor = factor;
-            saveState();
-            syncUpsertItem(item);
-            b.dataset.factor = factor;
-            delete b.dataset.needsFactor;
-            setup.style.display = 'none';
-            setup.innerHTML = '';
-            activateUnitBtn(b);
-            toast('Saved: 1 ' + b.dataset.unit + ' = ' + factor + ' ' + baseLabel);
-          }
-          factorInput.addEventListener('keydown', function(e){
-            if(e.key === 'Enter'){ e.preventDefault(); saveFactor(); }
-          });
-          document.getElementById('unit-factor-save').addEventListener('click', saveFactor);
-          document.getElementById('unit-factor-cancel').addEventListener('click', function(){
-            setup.style.display = 'none';
-            setup.innerHTML = '';
+          setup.innerHTML = unitEditFormHTML(item);
+          wireUnitEditForm(setup, item, function(){
+            toast('Updated units for ' + item.name);
+            handleScan(lastFoundBarcode);
+          }, function(){
+            handleScan(lastFoundBarcode);
           });
           return;
         }
@@ -1131,14 +1104,9 @@
     });
   }
 
-  function toggleUnitEdit(barcode){
-    var panel = document.getElementById('unit-edit-' + barcode);
-    if(!panel) return;
-    if(panel.style.display === 'block'){ panel.style.display = 'none'; return; }
-    var item = state.items.find(function(i){ return i.barcode === barcode; });
-    if(!item) return;
-    panel.style.display = 'block';
-    panel.innerHTML =
+  // Shared by the Items tab's "Units" panel and the scan screen's "Set other counting unit" form.
+  function unitEditFormHTML(item){
+    return (
       '<div class="card" style="margin:8px 0 14px;">' +
         '<label style="margin-top:0;">Base unit (used for price)</label>' +
         '<input type="text" class="ue-unit" list="unit-suggestions" value="' + esc(item.unit||'') + '" placeholder="kg, L, unit...">' +
@@ -1151,7 +1119,11 @@
           '<button class="btn primary ue-save">Save</button>' +
           '<button class="btn ghost ue-clear">Clear alt unit</button>' +
         '</div>' +
-      '</div>';
+      '</div>'
+    );
+  }
+
+  function wireUnitEditForm(panel, item, onSave, onClear){
     panel.querySelector('.ue-save').addEventListener('click', function(){
       item.unit = panel.querySelector('.ue-unit').value.trim();
       var altU = panel.querySelector('.ue-altunit').value.trim();
@@ -1160,15 +1132,30 @@
       else { delete item.altUnit; delete item.altFactor; }
       saveState();
       syncUpsertItem(item);
-      panel.style.display = 'none';
-      renderItems();
-      toast('Updated units for ' + item.name);
+      if(onSave) onSave();
     });
     panel.querySelector('.ue-clear').addEventListener('click', function(){
       delete item.altUnit;
       delete item.altFactor;
       saveState();
       syncUpsertItem(item);
+      if(onClear) onClear();
+    });
+  }
+
+  function toggleUnitEdit(barcode){
+    var panel = document.getElementById('unit-edit-' + barcode);
+    if(!panel) return;
+    if(panel.style.display === 'block'){ panel.style.display = 'none'; return; }
+    var item = state.items.find(function(i){ return i.barcode === barcode; });
+    if(!item) return;
+    panel.style.display = 'block';
+    panel.innerHTML = unitEditFormHTML(item);
+    wireUnitEditForm(panel, item, function(){
+      panel.style.display = 'none';
+      renderItems();
+      toast('Updated units for ' + item.name);
+    }, function(){
       panel.style.display = 'none';
       renderItems();
     });
