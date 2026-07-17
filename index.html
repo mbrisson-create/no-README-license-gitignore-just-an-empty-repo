@@ -1050,13 +1050,22 @@
         var barcode = (rawCode === undefined || rawCode === null || rawCode === 0 || String(rawCode).trim()==='') ? '' : String(rawCode).trim();
         var name = String(row[ni] !== undefined ? row[ni] : '').trim();
         if(!barcode && !name) continue;
-        if(!barcode) barcode = 'noupc-' + name.toLowerCase().replace(/[^a-z0-9]+/g,'-');
         var price = parseFloat(row[pi]) || 0;
         var unit = (ui >= 0 && row[ui] !== undefined) ? String(row[ui]).trim() : '';
         if(unit === '0') unit = '';
-        var existing = state.items.find(function(it){ return it.barcode === barcode; });
-        if(existing){ existing.name = name || existing.name; existing.price = price; existing.unit = unit; updated++; }
-        else { state.items.push({ barcode: barcode, name: name || '(unnamed)', price: price, unit: unit }); added++; }
+        // Match existing items by name, not barcode — the sheet's barcode column is often
+        // blank/inconsistent for produce, while the name is the reliable identifier.
+        var existing = name ? state.items.find(function(it){ return norm(it.name) === norm(name); }) : null;
+        if(existing){
+          if(barcode) existing.barcode = barcode;
+          existing.price = price;
+          existing.unit = unit;
+          updated++;
+        } else {
+          if(!barcode) barcode = 'noupc-' + (name || 'item-' + r).toLowerCase().replace(/[^a-z0-9]+/g,'-');
+          state.items.push({ barcode: barcode, name: name || '(unnamed)', price: price, unit: unit });
+          added++;
+        }
       }
       saveState();
       syncSetItems();
