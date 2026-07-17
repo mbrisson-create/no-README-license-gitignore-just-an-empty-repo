@@ -358,8 +358,18 @@
     renderTopbar();
     var active = document.activeElement;
     if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+    if(hasOpenUnitEdit()) return;
     if(document.getElementById('screen-sheet').classList.contains('active')) renderSheet();
     if(document.getElementById('screen-items').classList.contains('active')) renderItems();
+  }
+
+  // A poll landing while the "Units" panel is open would blow it away mid-edit.
+  function hasOpenUnitEdit(){
+    var panels = document.querySelectorAll('.unit-edit');
+    for(var i=0; i<panels.length; i++){
+      if(panels[i].style.display === 'block') return true;
+    }
+    return false;
   }
 
   function syncFromServer(){
