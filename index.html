@@ -480,9 +480,17 @@
     });
   }
 
-  // iOS defaults some rear cameras to a zoomed-in crop over getUserMedia; start at 1x
-  // and let the user zoom in from there since iOS gives web pages no focus control at all —
-  // zooming in is the only lever available to make a barcode large/sharp enough to decode.
+  // iOS gives web pages no focus control at all, so zooming in is the only lever
+  // available to make a barcode large/sharp enough to decode. Remember the zoom
+  // level per device so it doesn't reset back to 1x on every scan.
+  function loadZoomPref(){
+    var v = parseFloat(localStorage.getItem('stockcheck_zoom_v1'));
+    return isNaN(v) ? null : v;
+  }
+  function saveZoomPref(v){
+    localStorage.setItem('stockcheck_zoom_v1', String(v));
+  }
+
   function setupZoom(track){
     var zoomRow = document.getElementById('zoom-row');
     var slider = document.getElementById('zoom-slider');
@@ -496,13 +504,16 @@
     slider.min = caps.zoom.min;
     slider.max = caps.zoom.max;
     slider.step = caps.zoom.step || 0.1;
-    slider.value = caps.zoom.min;
-    label.textContent = Number(caps.zoom.min).toFixed(1) + 'x';
-    track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }).catch(function(){});
+    var saved = loadZoomPref();
+    var startZoom = saved === null ? caps.zoom.min : Math.min(Math.max(saved, caps.zoom.min), caps.zoom.max);
+    slider.value = startZoom;
+    label.textContent = startZoom.toFixed(1) + 'x';
+    track.applyConstraints({ advanced: [{ zoom: startZoom }] }).catch(function(){});
     slider.oninput = function(){
       var val = parseFloat(slider.value);
       label.textContent = val.toFixed(1) + 'x';
       track.applyConstraints({ advanced: [{ zoom: val }] }).catch(function(){});
+      saveZoomPref(val);
     };
   }
 
