@@ -1146,6 +1146,16 @@
     });
   }
 
+  // Fixed choices for the alt-unit dropdown — keeps it a picker instead of opening the keyboard.
+  // If an item somehow already has a value outside this list, it's added in so nothing gets lost.
+  function altUnitOptionsHTML(current){
+    var options = ['kg','g','L','ml','unit','case','box','bag','lb','oz'];
+    if(current && options.indexOf(current) === -1) options = [current].concat(options);
+    return '<option value="">— None —</option>' + options.map(function(u){
+      return '<option value="' + esc(u) + '"' + (u === current ? ' selected' : '') + '>' + esc(u) + '</option>';
+    }).join('');
+  }
+
   // Shared by the Items tab's "Units" panel and the scan screen's "Set other counting unit" form.
   function unitEditFormHTML(item){
     return (
@@ -1154,7 +1164,7 @@
         '<input type="text" class="ue-unit" list="unit-suggestions" value="' + esc(item.unit||'') + '" placeholder="kg, L, unit...">' +
         '<div style="font-size:12px; color:var(--ink-soft); margin:10px 0 4px;">Optional: also count this item a different way</div>' +
         '<label style="margin-top:0;">Alternate counting unit</label>' +
-        '<input type="text" class="ue-altunit" list="unit-suggestions" value="' + esc(item.altUnit||'') + '" placeholder="e.g. bag, case, unit">' +
+        '<select class="ue-altunit">' + altUnitOptionsHTML(item.altUnit||'') + '</select>' +
         '<label>How many ' + esc(item.unit||'base units') + ' is 1 of that?</label>' +
         '<input type="number" class="ue-altfactor" step="0.01" value="' + (item.altFactor||'') + '" placeholder="e.g. 2.3">' +
         '<div class="row" style="margin-top:12px;">' +
