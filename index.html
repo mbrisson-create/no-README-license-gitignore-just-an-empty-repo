@@ -15,6 +15,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.23.0/umd/index.min.js"></script>
 <style>
   :root{
     --surface:#E3E6E0;
@@ -295,10 +296,7 @@
 
   var state = loadState();
   var lastFoundBarcode = null;
-  var scanMode = null; // 'native' | 'quagga'
-  var nativeStream = null;
-  var nativeDetector = null;
-  var nativeLoopId = null;
+  var zxingReader = null;
   var lastScanCode = null;
   var lastScanTime = 0;
 
@@ -421,102 +419,52 @@
   btnStart.addEventListener('click', startCamera);
   btnStop.addEventListener('click', stopCamera);
 
+  // ZXing runs the live scan on every browser (including iOS Chrome/Safari,
+  // which is WebKit under the hood and never exposes the native BarcodeDetector API).
+  var zxingHints = null;
+  function getZxingHints(){
+    if(zxingHints) return zxingHints;
+    zxingHints = new Map();
+    zxingHints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.CODABAR, ZXing.BarcodeFormat.ITF,
+      ZXing.BarcodeFormat.QR_CODE
+    ]);
+    zxingHints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    return zxingHints;
+  }
+
   function startCamera(){
     readerWrap.classList.add('show');
     document.getElementById('scan-tip').style.display = 'block';
     btnStart.style.display = 'none';
     btnStop.style.display = 'block';
 
-    if('BarcodeDetector' in window){
-      startNativeScanner();
-    } else if(typeof Quagga !== 'undefined'){
-      startQuaggaScanner();
-    } else {
+    if(typeof ZXing === 'undefined'){
       toast('Camera scanning failed to load — check your connection and reload.');
       stopCamera();
+      return;
     }
-  }
 
-  function startNativeScanner(){
-    scanMode = 'native';
     var video = document.getElementById('native-video');
     document.getElementById('reader').style.display = 'none';
     video.style.display = 'block';
 
-    navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-    }).then(function(stream){
-      nativeStream = stream;
-      video.srcObject = stream;
-      return video.play();
-    }).then(function(){
-      BarcodeDetector.getSupportedFormats ? BarcodeDetector.getSupportedFormats().then(setupNativeDetector) : setupNativeDetector();
-      setupTorch(nativeStream.getVideoTracks()[0]);
+    zxingReader = new ZXing.BrowserMultiFormatReader(getZxingHints(), 150);
+    zxingReader.decodeFromConstraints(
+      { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
+      video,
+      function(result){
+        if(result) handleScan(result.getText());
+      }
+    ).then(function(){
+      var stream = video.srcObject;
+      if(stream) setupTorch(stream.getVideoTracks()[0]);
     }).catch(function(err){
       toast('Camera unavailable: ' + (err.message || err));
       stopCamera();
-    });
-
-    function setupNativeDetector(supported){
-      var wanted = ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','codabar','itf','qr_code'];
-      var formats = supported ? wanted.filter(function(f){ return supported.indexOf(f) !== -1; }) : wanted;
-      try{ nativeDetector = new BarcodeDetector({ formats: formats.length ? formats : wanted }); }
-      catch(e){ nativeDetector = new BarcodeDetector(); }
-      nativeLoopId = setInterval(function(){
-        if(video.readyState < 2) return;
-        nativeDetector.detect(video).then(function(codes){
-          if(codes && codes.length) handleScan(codes[0].rawValue);
-        }).catch(function(){ /* transient decode errors are normal, ignore */ });
-      }, 180);
-    }
-  }
-
-  function startQuaggaScanner(){
-    scanMode = 'quagga';
-    document.getElementById('native-video').style.display = 'none';
-    var target = document.getElementById('reader');
-    target.style.display = 'block';
-    target.innerHTML = '';
-
-    Quagga.init({
-      inputStream: {
-        name: "Live",
-        type: "LiveStream",
-        target: target,
-        constraints: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
-      },
-      locator: { patchSize: "medium", halfSample: true },
-      numOfWorkers: (navigator.hardwareConcurrency ? Math.min(navigator.hardwareConcurrency, 4) : 2),
-      frequency: 10,
-      decoder: {
-        readers: ["ean_reader", "ean_8_reader", "upc_reader", "upc_e_reader", "code_128_reader", "code_39_reader", "codabar_reader", "i2of5_reader"]
-      },
-      locate: true
-    }, function(err){
-      if(err){
-        toast('Camera unavailable: ' + err);
-        stopCamera();
-        return;
-      }
-      Quagga.start();
-      var videoEl = target.querySelector('video');
-      if(videoEl){
-        videoEl.setAttribute('playsinline', 'true');
-        videoEl.muted = true;
-      }
-      try{
-        var track = Quagga.CameraAccess.getActiveTrack();
-        if(track) setupTorch(track);
-      }catch(e){}
-    });
-
-    Quagga.onDetected(function(result){
-      if(!result || !result.codeResult || !result.codeResult.code) return;
-      handleScan(result.codeResult.code);
     });
   }
 
@@ -538,13 +486,10 @@
   }
 
   function stopCamera(){
-    if(scanMode === 'native'){
-      if(nativeLoopId){ clearInterval(nativeLoopId); nativeLoopId = null; }
-      if(nativeStream){ nativeStream.getTracks().forEach(function(t){ t.stop(); }); nativeStream = null; }
-    } else if(scanMode === 'quagga'){
-      try{ Quagga.offDetected(); Quagga.stop(); }catch(e){}
+    if(zxingReader){
+      try{ zxingReader.reset(); }catch(e){}
+      zxingReader = null;
     }
-    scanMode = null;
     lastScanCode = null;
     document.getElementById('torch-row').style.display = 'none';
     readerWrap.classList.remove('show');
