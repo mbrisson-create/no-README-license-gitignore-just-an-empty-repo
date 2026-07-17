@@ -260,6 +260,8 @@
       <div id="mapping-area" style="display:none; margin-top:10px;"></div>
     </div>
 
+    <button class="btn ghost" id="btn-export-items" style="margin-bottom:14px;">⬇ Export Item List</button>
+
     <input type="text" id="item-search" placeholder="Search items by name or barcode" style="margin-bottom:10px;">
     <datalist id="unit-suggestions">
       <option value="kg"><option value="g"><option value="L"><option value="ml">
@@ -957,6 +959,27 @@
   });
 
   // ================= ITEMS =================
+  document.getElementById('btn-export-items').addEventListener('click', function(){
+    if(!state.items.length){ toast('No items to export'); return; }
+    var rows = state.items.slice().sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(i){
+      return {
+        Barcode: i.barcode.indexOf('noupc-')===0 ? '' : i.barcode,
+        Item: i.name,
+        Price: i.price,
+        Unit: i.unit || '',
+        'Alt Unit': i.altUnit || '',
+        'Alt Factor': i.altFactor || ''
+      };
+    });
+    var ws = XLSX.utils.json_to_sheet(rows);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Items');
+    var d = new Date();
+    var fname = 'inventory-items-' + d.toISOString().slice(0,10) + '.xlsx';
+    XLSX.writeFile(wb, fname);
+    toast('Exported ' + fname);
+  });
+
   document.getElementById('file-input').addEventListener('change', function(e){
     var file = e.target.files[0];
     if(!file) return;
