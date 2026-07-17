@@ -616,6 +616,21 @@
     if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('btn-manual-lookup').click(); }
   });
 
+  // Redraws the result card for an already-known item without touching the
+  // scan-dedup guard, so it can be called to just refresh (e.g. after editing
+  // its units) without being mistaken for a brand new physical scan.
+  function renderScanResultForItem(item){
+    var area = document.getElementById('result-area');
+    area.innerHTML =
+      '<div class="card result-card">' +
+        '<div class="rcode mono">' + esc(item.barcode.indexOf('noupc-')===0 ? 'no code on file' : item.barcode) + '</div>' +
+        '<div class="rname">' + esc(item.name) + '</div>' +
+        '<div class="rprice">' + money(item.price) + ' / ' + esc(item.unit || 'unit') + '</div>' +
+        qtyBlockHTML(item, existingQty(item.barcode), existingCountUnit(item.barcode) || item.unit) +
+      '</div>';
+    wireQtyBlock();
+  }
+
   function handleScan(code){
     code = String(code).trim();
     var now = Date.now();
@@ -627,13 +642,8 @@
     var area = document.getElementById('result-area');
 
     if(item){
-      area.innerHTML =
-        '<div class="card result-card">' +
-          '<div class="rcode mono">' + esc(item.barcode.indexOf('noupc-')===0 ? 'no code on file' : item.barcode) + '</div>' +
-          '<div class="rname">' + esc(item.name) + '</div>' +
-          '<div class="rprice">' + money(item.price) + ' / ' + esc(item.unit || 'unit') + '</div>' +
-          qtyBlockHTML(item, existingQty(item.barcode), existingCountUnit(item.barcode) || item.unit) +
-        '</div>';
+      renderScanResultForItem(item);
+      return;
     } else {
       area.innerHTML =
         '<div class="card result-card">' +
@@ -815,9 +825,9 @@
           setup.innerHTML = unitEditFormHTML(item);
           wireUnitEditForm(setup, item, function(){
             toast('Updated units for ' + item.name);
-            handleScan(lastFoundBarcode);
+            renderScanResultForItem(item);
           }, function(){
-            handleScan(lastFoundBarcode);
+            renderScanResultForItem(item);
           });
           return;
         }
