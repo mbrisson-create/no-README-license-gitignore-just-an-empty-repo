@@ -744,16 +744,20 @@
     return state.counts[code] ? state.counts[code].countUnit : null;
   }
 
+  // Every item can be counted either in its own unit or in kg — whichever it isn't already.
+  function otherCountUnit(baseUnit){
+    return String(baseUnit || '').trim().toLowerCase() === 'kg' ? 'unit' : 'kg';
+  }
+
   function qtyBlockHTML(item, qty, countUnit){
     countUnit = countUnit || item.unit || 'unit';
-    var toggle = '';
-    if(item.altUnit && item.altFactor){
-      toggle =
-        '<div class="row" style="max-width:280px; margin:14px auto 0;">' +
-          '<button type="button" class="btn small unit-toggle-btn' + (countUnit === item.unit ? ' primary' : ' ghost') + '" data-unit="' + esc(item.unit) + '" data-factor="1">' + esc(item.unit) + '</button>' +
-          '<button type="button" class="btn small unit-toggle-btn' + (countUnit === item.altUnit ? ' primary' : ' ghost') + '" data-unit="' + esc(item.altUnit) + '" data-factor="' + item.altFactor + '">' + esc(item.altUnit) + '</button>' +
-        '</div>';
-    }
+    var other = otherCountUnit(item.unit);
+    var hasFactor = item.altUnit === other && item.altFactor > 0;
+    var toggle =
+      '<div class="row" style="max-width:280px; margin:14px auto 0;">' +
+        '<button type="button" class="btn small unit-toggle-btn' + (countUnit === item.unit ? ' primary' : ' ghost') + '" data-unit="' + esc(item.unit) + '" data-factor="1">' + esc(item.unit || '(base)') + '</button>' +
+        '<button type="button" class="btn small unit-toggle-btn' + (countUnit === other ? ' primary' : ' ghost') + '" data-unit="' + esc(other) + '" data-factor="' + (hasFactor ? item.altFactor : '') + '"' + (hasFactor ? '' : ' data-needs-factor="1"') + '>' + esc(other) + '</button>' +
+      '</div>';
     return (
       toggle +
       '<label id="scan-qty-label" style="text-align:center; margin-top:14px;">Quantity counted (' + esc(countUnit) + ')</label>' +
@@ -765,7 +769,7 @@
         '</div>' +
       '</div>' +
       '<input type="hidden" id="scan-count-unit" value="' + esc(countUnit) + '">' +
-      '<input type="hidden" id="scan-count-factor" value="' + (countUnit === item.altUnit ? item.altFactor : 1) + '">' +
+      '<input type="hidden" id="scan-count-factor" value="' + (countUnit === other && hasFactor ? item.altFactor : 1) + '">' +
       '<button class="btn stamp" id="btn-save-count" style="margin-top:14px;">✓ Save Count</button>' +
       '<button class="btn ghost" id="btn-scan-next" style="margin-top:10px;">Scan Next</button>'
     );
@@ -783,6 +787,21 @@
     var unitBtns = document.querySelectorAll('#result-area .unit-toggle-btn');
     unitBtns.forEach(function(b){
       b.addEventListener('click', function(){
+        if(b.dataset.needsFactor){
+          var item = state.items.find(function(i){ return i.barcode === lastFoundBarcode; });
+          if(!item) return;
+          var baseLabel = item.unit || 'base unit';
+          var answer = window.prompt('How many ' + baseLabel + ' is 1 ' + b.dataset.unit + ' of "' + item.name + '"?', '');
+          var factor = parseFloat(answer);
+          if(!answer || isNaN(factor) || factor <= 0) return; // cancelled or invalid — stay on current unit
+          item.altUnit = b.dataset.unit;
+          item.altFactor = factor;
+          saveState();
+          syncUpsertItem(item);
+          b.dataset.factor = factor;
+          delete b.dataset.needsFactor;
+          toast('Saved: 1 ' + b.dataset.unit + ' = ' + factor + ' ' + baseLabel);
+        }
         unitBtns.forEach(function(x){ x.classList.remove('primary'); x.classList.add('ghost'); });
         b.classList.remove('ghost'); b.classList.add('primary');
         document.getElementById('scan-count-unit').value = b.dataset.unit;
