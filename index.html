@@ -213,6 +213,11 @@
     <div id="torch-row" style="display:none; margin-top:8px;">
       <button class="btn ghost small" id="btn-torch">💡 Flashlight</button>
     </div>
+    <div id="zoom-row" style="display:none; align-items:center; gap:10px; margin-top:8px;">
+      <span style="flex:0 0 auto;">🔍</span>
+      <input type="range" id="zoom-slider" style="flex:1 1 auto;">
+      <span id="zoom-label" class="mono" style="flex:0 0 auto; font-size:12px; min-width:34px; text-align:right;">1.0x</span>
+    </div>
 
     <button class="btn primary" id="btn-start-cam">📷 Live Camera Scan</button>
     <button class="btn ghost" id="btn-stop-cam" style="display:none; margin-top:10px;">Stop Camera</button>
@@ -466,7 +471,7 @@
       var stream = video.srcObject;
       if(stream){
         var track = stream.getVideoTracks()[0];
-        resetZoom(track);
+        setupZoom(track);
         setupTorch(track);
       }
     }).catch(function(err){
@@ -475,12 +480,30 @@
     });
   }
 
-  // iOS defaults some rear cameras to a zoomed-in crop over getUserMedia; pull it back to 1x.
-  function resetZoom(track){
+  // iOS defaults some rear cameras to a zoomed-in crop over getUserMedia; start at 1x
+  // and let the user zoom in from there since iOS gives web pages no focus control at all —
+  // zooming in is the only lever available to make a barcode large/sharp enough to decode.
+  function setupZoom(track){
+    var zoomRow = document.getElementById('zoom-row');
+    var slider = document.getElementById('zoom-slider');
+    var label = document.getElementById('zoom-label');
     var caps = track && track.getCapabilities ? track.getCapabilities() : {};
-    if(caps && caps.zoom){
-      track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }).catch(function(){});
+    if(!(caps && caps.zoom)){
+      zoomRow.style.display = 'none';
+      return;
     }
+    zoomRow.style.display = 'flex';
+    slider.min = caps.zoom.min;
+    slider.max = caps.zoom.max;
+    slider.step = caps.zoom.step || 0.1;
+    slider.value = caps.zoom.min;
+    label.textContent = Number(caps.zoom.min).toFixed(1) + 'x';
+    track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }).catch(function(){});
+    slider.oninput = function(){
+      var val = parseFloat(slider.value);
+      label.textContent = val.toFixed(1) + 'x';
+      track.applyConstraints({ advanced: [{ zoom: val }] }).catch(function(){});
+    };
   }
 
   function setupTorch(track){
@@ -507,6 +530,7 @@
     }
     lastScanCode = null;
     document.getElementById('torch-row').style.display = 'none';
+    document.getElementById('zoom-row').style.display = 'none';
     readerWrap.classList.remove('show');
     document.getElementById('scan-tip').style.display = 'none';
     btnStart.style.display = 'block';
