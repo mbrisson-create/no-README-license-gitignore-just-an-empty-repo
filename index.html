@@ -457,7 +457,10 @@
       { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
       video,
       function(result){
-        if(result) handleScan(result.getText());
+        if(result){
+          handleScan(result.getText());
+          stopCamera();
+        }
       }
     ).then(function(){
       var stream = video.srcObject;
@@ -772,6 +775,7 @@
         document.getElementById('result-area').innerHTML = '';
         document.getElementById('manual-barcode').value = '';
         lastScanCode = null;
+        startCamera();
       });
     }
   }
