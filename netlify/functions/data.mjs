@@ -56,20 +56,25 @@ export default async (req) => {
 
       if (action === "upsertCount") {
         const counts = (await countsStore.get("counts", { type: "json" })) || {};
-        counts[body.barcode] = body.count;
+        counts[body.key] = body.count;
         await countsStore.setJSON("counts", counts);
         return json({ ok: true });
       }
 
       if (action === "deleteCount") {
         const counts = (await countsStore.get("counts", { type: "json" })) || {};
-        delete counts[body.barcode];
+        delete counts[body.key];
         await countsStore.setJSON("counts", counts);
         return json({ ok: true });
       }
 
       if (action === "clearCounts") {
         await countsStore.setJSON("counts", {});
+        return json({ ok: true });
+      }
+
+      if (action === "setCounts") {
+        await countsStore.setJSON("counts", body.counts || {});
         return json({ ok: true });
       }
 
