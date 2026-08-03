@@ -242,6 +242,10 @@
       <button class="btn small" id="btn-manual-lookup" style="flex:0 0 90px;">Find</button>
     </div>
 
+    <div class="divider">or search by name</div>
+    <input type="text" id="name-search" placeholder="Search item by name">
+    <div id="name-search-results" style="margin-top:6px;"></div>
+
     <div id="result-area" style="margin-top:18px;"></div>
   </section>
 
@@ -653,6 +657,41 @@
     if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('btn-manual-lookup').click(); }
   });
 
+  // Lets an item be pulled up for counting by typing its name instead of
+  // scanning/typing a barcode — handy for produce and other no-barcode items.
+  document.getElementById('name-search').addEventListener('input', function(){
+    renderNameSearchResults(this.value.trim());
+  });
+
+  function renderNameSearchResults(q){
+    var box = document.getElementById('name-search-results');
+    if(!q){ box.innerHTML = ''; return; }
+    var ql = norm(q);
+    var matches = state.items.filter(function(i){ return norm(i.name).indexOf(ql) !== -1; })
+      .sort(function(a,b){ return a.name.localeCompare(b.name); })
+      .slice(0, 8);
+    if(!matches.length){
+      box.innerHTML = '<div style="font-size:12px; color:var(--ink-soft); padding:6px 2px;">No matching items</div>';
+      return;
+    }
+    box.innerHTML = matches.map(function(i){
+      var codeLabel = i.barcode.indexOf('noupc-') === 0 ? 'no code' : i.barcode;
+      return (
+        '<div class="item-row" data-pick="' + esc(i.barcode) + '" style="cursor:pointer;">' +
+          '<div class="info"><div class="n">' + esc(i.name) + '</div><div class="c mono">' + esc(codeLabel) + (i.unit ? ' · ' + esc(i.unit) : '') + '</div></div>' +
+          '<div class="p mono">' + money(i.price) + '</div>' +
+        '</div>'
+      );
+    }).join('');
+    box.querySelectorAll('[data-pick]').forEach(function(row){
+      row.addEventListener('click', function(){
+        document.getElementById('name-search').value = '';
+        box.innerHTML = '';
+        handleScan(row.dataset.pick);
+      });
+    });
+  }
+
   // Redraws the result card for an already-known item without touching the
   // scan-dedup guard, so it can be called to just refresh (e.g. after editing
   // its units) without being mistaken for a brand new physical scan.
@@ -676,6 +715,8 @@
     lastScanCode = code;
     lastScanTime = now;
     lastFoundBarcode = code;
+    document.getElementById('name-search').value = '';
+    document.getElementById('name-search-results').innerHTML = '';
     var item = state.items.find(function(i){ return i.barcode === code; });
     var area = document.getElementById('result-area');
 
